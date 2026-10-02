@@ -1,0 +1,8 @@
+out/
+node_modules/
+*.vsix
+__pycache__/
+*.pyc
+.ai-project/
+.vscode-test/
+pi_err.txt
