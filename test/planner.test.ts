@@ -73,6 +73,20 @@ test('generatePlan reports live progress while the planner streams tasks', async
   assert.ok(messages.includes('Validating plan…'), messages.join(' | '));
 });
 
+test('generatePlan falls back to the English-only default system prompt', async () => {
+  let system = '';
+  const provider: LLMProvider = {
+    id: 'fake',
+    model: 'fake-model',
+    async generate(request: LLMRequest): Promise<LLMResponse> {
+      system = request.system ?? '';
+      return { text: VALID_PLAN };
+    },
+  };
+  await generatePlan({ ...baseInput(provider), systemPrompt: '   ' });
+  assert.match(system, /Write every plan string in English/);
+});
+
 test('generatePlan reports the offending response when no JSON is ever produced', async () => {
   const reply = 'I will inspect the workspace files to understand the current structure.';
   await assert.rejects(
