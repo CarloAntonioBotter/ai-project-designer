@@ -12,14 +12,15 @@ Non copiare codice, asset o implementazioni proprietarie di Pendant. Usa Pendant
 
 Realizza una VS Code extension che implementi un sistema di **AI-assisted software/project design** basato su due livelli distinti:
 
-1. **Architect / Planner LLM**: produce il piano strutturato e le specifiche operative dei task.
-2. **Pi Agent** ([pi.dev](https://pi.dev/), *agent harness*, pacchetto npm `@earendil-works/pi-coding-agent`, CLI `pi`): è il **runtime agentico obbligatorio per l'esecuzione dei task**. In questo documento "Pi" indica sempre e solo questo agente, mai Raspberry Pi. L'Executor non deve essere implementato come una semplice chiamata HTTP diretta a un LLM: ogni attività operativa deve essere eseguita attraverso una nuova istanza/esecuzione dell'agente Pi.
+1. **Architect / Planner LLM**: produce il piano strutturato e le specifiche operative dei task. Anche il Planner è una **esecuzione Pi** (one-shot, read-only): non esiste un client LLM separato nell'estensione.
+2. **Pi Agent** ([pi.dev](https://pi.dev/), *agent harness*, pacchetto npm `@earendil-works/pi-coding-agent`, CLI `pi`): è il **runtime agentico obbligatorio per l'esecuzione dei task** e per il Planner. In questo documento "Pi" indica sempre e solo questo agente, mai Raspberry Pi. L'Executor non deve essere implementato come una semplice chiamata HTTP diretta a un LLM: ogni attività operativa deve essere eseguita attraverso una nuova istanza/esecuzione dell'agente Pi.
 
 Il confine architetturale fondamentale è quindi:
 
 ```text
 PLANNING
-  = Planner LLM, output JSON strutturato
+  = Planner LLM come one-shot Pi run (tool read-only, mai scrittura)
+  = output JSON strutturato
 
 EXECUTION / AGENTIC WORK
   = Pi Agent, una nuova esecuzione isolata per ogni task
@@ -27,7 +28,7 @@ EXECUTION / AGENTIC WORK
 
 Pi (l'agent harness `pi.dev`, non un Raspberry Pi) è il componente responsabile del loop agentico, dell'uso degli strumenti e dell'interazione con il workspace durante l'esecuzione. Il progetto deve utilizzare Pi tramite la sua integrazione ufficiale CLI e/o SDK, preferendo la CLI quando è necessario mantenere il confine di processo richiesto dalla pipeline Python.
 
-Il Planner non deve eseguire direttamente modifiche al repository. Il Planner deve solo trasformare una richiesta complessa in specifiche operative autosufficienti che Pi possa eseguire.
+Sia il Planner sia l'Executor usano il runtime Pi e i provider/modelli configurati in Pi. Il Planner non deve eseguire direttamente modifiche al repository: la sua esecuzione Pi riceve una allowlist di soli tool read-only (`read`, `grep`, `find`, `ls`) e **non può scrivere**. Il Planner deve solo trasformare una richiesta complessa in specifiche operative autosufficienti che Pi possa eseguire.
 
 ### LLM 1 — Architect / Planner
 
@@ -57,7 +58,7 @@ Deve:
 7. massimizzare l'autonomia di Pi, evitando che l'agente debba reinterpretare il problema globale;
 8. produrre **solo JSON strutturato** secondo lo schema del progetto.
 
-Il Planner può continuare a utilizzare un'astrazione LLM/provider separata. Non è però autorizzato a sostituire Pi per attività agentiche o modifiche operative al workspace.
+Il Planner usa **Pi Agent** in una esecuzione one-shot con soli tool read-only. Non è un client LLM separato e non è autorizzato a scrivere sul workspace: trasforma soltanto la richiesta in specifiche operative.
 
 ### LLM 2 — Executor Agent (Pi)
 
@@ -119,8 +120,9 @@ L'architettura deve essere:
                                     │
                                     ▼
                          ┌──────────────────────┐
-                         │     LLM 1            │
+                         │  LLM 1 (Pi run)      │
                          │ Architect / Planner  │
+                         │  read-only tools     │
                          └──────────┬───────────┘
                                     │
                                     ▼
@@ -293,24 +295,20 @@ Il runner non deve inventare un secondo loop agentico parallelo: il loop agentic
 
 # Configurazione Planner e Pi
 
-Il progetto deve distinguere chiaramente la configurazione del Planner dalla configurazione dell'Executor Pi.
+Sia il Planner sia l'Executor usano **Pi Agent** e i provider/modelli configurati in Pi. Il progetto non deve introdurre un client LLM separato per il Planner.
 
-## Planner LLM
+## Planner (esecuzione Pi read-only)
 
-Il Planner deve avere un'astrazione provider-agnostic e configurabile:
+Il Planner è una **esecuzione Pi one-shot** con allowlist di soli tool read-only:
 
 ```text
-provider
-model
-baseUrl
-apiKey
-
-temperature
-maxTokens
+provider   (dal catalogo di Pi)
+model      (dal catalogo di Pi)
+thinking   (opzionale, se supportato da Pi)
 timeout
 ```
 
-Creare un'interfaccia astratta, ad esempio:
+Non esiste una configurazione `planner.baseUrl` / `planner.apiKey`: autenticazione, provider e catalogo modelli appartengono a Pi. L'interfaccia astratta resta ammessa:
 
 ```typescript
 interface LLMProvider {
@@ -318,7 +316,9 @@ interface LLMProvider {
 }
 ```
 
-L'astrazione Planner non deve vincolare il progetto a OpenAI. Deve poter utilizzare provider HTTP/OpenAI-compatible o altri adapter implementati nel progetto.
+ma l'unica implementazione ammessa per il Planner è un adapter che invoca Pi (es. `PiPlannerProvider`), non una chiamata HTTP diretta a un provider.
+
+Il Planner non deve mai poter scrivere: la sua esecuzione Pi riceve solo i tool `read`, `grep`, `find`, `ls`.
 
 ## Executor Pi Agent
 
@@ -342,8 +342,9 @@ Esempio concettuale:
 ```json
 {
   "planner": {
-    "provider": "openai-compatible",
-    "model": "powerful-model"
+    "provider": "provider-dal-catalogo-pi",
+    "model": "powerful-model",
+    "tools": ["read", "grep", "find", "ls"]
   },
   "executor": {
     "runtime": "pi",
@@ -1163,7 +1164,8 @@ extension/
 │   │   └── context-builder.ts
 │   ├── llm/
 │   │   ├── provider.ts
-│   │   └── factory.ts
+│   │   ├── pi-provider.ts
+│   │   └── planner-prompt.ts
 │   ├── pi/
 │   │   ├── pi-runner.ts
 │   │   ├── pi-protocol.ts
@@ -1241,11 +1243,9 @@ Prevedere impostazioni configurabili, ad esempio:
 
 ```json
 {
-  "aiProjectDesigner.planner.provider": "openai-compatible",
-  "aiProjectDesigner.planner.model": "...",
-  "aiProjectDesigner.planner.baseUrl": "...",
-  "aiProjectDesigner.planner.temperature": 0.2,
-  "aiProjectDesigner.planner.maxTokens": 8000,
+  "aiProjectDesigner.planner.provider": "provider dal catalogo Pi",
+  "aiProjectDesigner.planner.model": "modello dal catalogo Pi",
+  "aiProjectDesigner.planner.thinking": "medium",
   "aiProjectDesigner.planner.timeout": 120000,
 
   "aiProjectDesigner.pi.command": "pi",
@@ -1260,7 +1260,7 @@ Prevedere impostazioni configurabili, ad esempio:
 }
 ```
 
-Le impostazioni `pi.*` configurano il **runtime di integrazione**, non un provider LLM alternativo.
+Le impostazioni `pi.*` configurano il **runtime di integrazione**, non un provider LLM alternativo. Anche il Planner passa da Pi: non esistono `planner.baseUrl` / `planner.apiKey`.
 
 La selezione del provider/model dell'Executor deve seguire la configurazione di Pi. Se l'estensione espone un override, deve tradurlo verso Pi usando solo modalità ufficialmente supportate dalla versione installata.
 
@@ -1379,7 +1379,7 @@ Il progetto è considerato completato solo se:
 22. il progetto contiene README con installazione, configurazione e requisiti Pi;
 23. il progetto verifica la presenza/versione del runtime Pi;
 24. il progetto tratta repository content e Pi project resources come untrusted input;
-25. il progetto può cambiare provider/model del Planner senza modificare il core dell'estensione;
+25. il progetto può cambiare provider/model del Planner — selezionato dal catalogo Pi — senza modificare il core dell'estensione;
 26. il provider/model dell'Executor può essere cambiato attraverso la configurazione supportata da Pi senza sostituire Pi come runtime agentico;
 27. nessuna fase dell'esecuzione task dipende dalla conversation history di un task precedente;
 28. il progetto builda e i test passano in CI/localmente.

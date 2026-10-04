@@ -1,5 +1,5 @@
 /**
- * Planner LLM transport: a one-shot, tool-less Pi run.
+ * Planner LLM transport: a one-shot Pi run with a read-only tool allowlist.
  *
  * Both the Planner and the Executor use models configured in the Pi agent, so
  * the Planner reuses the same process boundary and Pi CLI authentication as the
@@ -32,9 +32,10 @@ export class PiPlannerProvider implements LLMProvider {
       task_id: 'planner',
       attempt: 1,
       rawPrompt: true,
-      // Planning is read-only: the executor runner grants the tools, but the
-      // planner must never be able to write. Tool use is allowed because
-      // agentic models otherwise emit tool-call markup instead of JSON.
+      // Planning is read-only: the caller grants only read-only tools, so the
+      // planner can inspect the workspace but never write to it. Tool use is
+      // allowed because agentic models otherwise emit tool-call markup instead
+      // of JSON.
       pi: { ...this.config.pi, noSession: true },
       prompt: `${request.system}\n\n${request.user}`,
       instructions: [],
