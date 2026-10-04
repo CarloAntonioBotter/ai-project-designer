@@ -110,12 +110,15 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
   .ok { color: var(--vscode-charts-green, #89d185); }
   .notice { margin: 8px 0; padding: 6px 8px; border-radius: var(--radius); background: var(--vscode-textCodeBlock-background); }
   .sessions { list-style: none; padding: 0; margin: 0; }
-  /* Same framed row as the task list: the session description reads as a card. */
+  /* Same framed row as the task list, but filled: the session card must stand out
+     from the blue buttons, so it uses a light azure tint with dark ink. Only the
+     fill/ink pair is theme-independent by design; keep the two in sync. */
   .sessions li {
     display: flex; align-items: center; gap: 6px; padding: 4px 6px; margin-bottom: 4px;
-    border: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35)); border-radius: var(--radius);
+    background: #b9dcff; color: #0b2545;
+    border: 1px solid #7cb3e8; border-radius: var(--radius);
   }
-  .sessions li:hover { background: var(--vscode-list-hoverBackground); }
+  .sessions li:hover { background: #a3cdfa; }
   .sessions .session-name { flex: 1 1 auto; cursor: pointer; overflow-wrap: anywhere; }
   /* Icon buttons share one square box, so the stop control matches the ✕ buttons. */
   .sessions .session-del, #stop {

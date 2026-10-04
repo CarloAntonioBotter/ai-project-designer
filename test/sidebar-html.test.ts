@@ -73,8 +73,11 @@ test('sidebar scopes the plan failure notice to a session still in progress', ()
   assert.match(html, /function setPlanNotice\(text\) \{\n    planNoticeText = text \|\| '';/);
 });
 
-test('sidebar frames each session row with a border', () => {
-  assert.match(html, /\.sessions li \{[\s\S]{0,300}border: 1px solid var\(--vscode-panel-border/);
+test('sidebar fills each session row with the light azure frame', () => {
+  // The fill must stay lighter than the solid blue buttons, with dark ink on it.
+  assert.match(html, /\.sessions li \{[\s\S]{0,300}background: #b9dcff; color: #0b2545;/);
+  assert.match(html, /\.sessions li \{[\s\S]{0,300}border: 1px solid #7cb3e8;/);
+  assert.match(html, /\.sessions li:hover \{ background: #a3cdfa; \}/);
 });
 
 test('deleting any session from the list asks for confirmation', () => {  assert.match(
