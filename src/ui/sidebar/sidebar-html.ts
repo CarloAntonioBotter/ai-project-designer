@@ -283,7 +283,7 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
     </fieldset>
 
     <fieldset>
-      <legend>Executor — Pi Agent</legend>
+      <legend>Executor LLM (model from Pi agent)</legend>
       <div class="grid2">
         <div class="field">
           <label for="pi.provider">Provider</label>
