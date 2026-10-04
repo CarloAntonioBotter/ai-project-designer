@@ -80,7 +80,9 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
   .field .help { opacity: 0.65; margin-top: 2px; }
   .check { display: flex; align-items: center; gap: 6px; margin: 6px 0; }
   .check input { width: auto; }
-  .grid2 { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 8px; }
+  .grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 8px; }
+  /* Paired numeric fields read better at equal width than 1fr/2fr. */
+  .grid2.even { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .tasks { list-style: none; padding: 0; margin: 0; }
   .task { border: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35)); border-radius: var(--radius); padding: 6px 8px; margin-bottom: 4px; cursor: pointer; }
   .task:hover { background: var(--vscode-list-hoverBackground); }
@@ -108,8 +110,12 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
   .ok { color: var(--vscode-charts-green, #89d185); }
   .notice { margin: 8px 0; padding: 6px 8px; border-radius: var(--radius); background: var(--vscode-textCodeBlock-background); }
   .sessions { list-style: none; padding: 0; margin: 0; }
-  .sessions li { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 3px; }
-  .sessions li:hover { background: var(--vscode-list-hoverBackground); border-radius: var(--radius); }
+  /* Same framed row as the task list: the session description reads as a card. */
+  .sessions li {
+    display: flex; align-items: center; gap: 6px; padding: 4px 6px; margin-bottom: 4px;
+    border: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35)); border-radius: var(--radius);
+  }
+  .sessions li:hover { background: var(--vscode-list-hoverBackground); }
   .sessions .session-name { flex: 1 1 auto; cursor: pointer; overflow-wrap: anywhere; }
   /* Icon buttons share one square box, so the stop control matches the ✕ buttons. */
   .sessions .session-del, #stop {
@@ -263,52 +269,34 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
           <select id="pi.model"></select>
         </div>
       </div>
-      <div class="field">
-        <label for="pi.thinking">Thinking</label>
-        <select id="pi.thinking"></select>
+      <div class="grid2 even">
+        <div class="field">
+          <label for="pi.thinking">Thinking</label>
+          <select id="pi.thinking"></select>
+        </div>
+        <div class="field">
+          <label for="pi.timeout">Timeout (s)</label>
+          <input type="number" id="pi.timeout" min="1" />
+        </div>
       </div>
-      <div class="field">
-        <label for="pi.command">Pi command</label>
-        <input type="text" id="pi.command" placeholder="pi" />
-      </div>
-      <div class="field">
-        <label for="pi.mode">Mode</label>
-        <input type="text" id="pi.mode" readonly />
-      </div>
-      <div class="field">
-        <label for="pi.tools">Tool allowlist (comma separated)</label>
-        <input type="text" id="pi.tools" placeholder="read, edit, write, bash" />
-      </div>
-      <div class="field">
-        <label for="pi.agentDir">Pi config dir (PI_CODING_AGENT_DIR, optional)</label>
-        <input type="text" id="pi.agentDir" placeholder="empty = Pi default" />
-      </div>
-      <div class="field">
-        <label for="pi.allowedExtensions">Allowed Pi extensions (comma separated)</label>
-        <input type="text" id="pi.allowedExtensions" placeholder="empty = none loaded" />
-      </div>
-      <div class="field">
-        <label for="pi.timeout">Timeout (s)</label>
-        <input type="number" id="pi.timeout" min="1" />
-      </div>
-      <label class="check"><input type="checkbox" id="pi.noSession" /> Ephemeral no-session runs (required for isolation)</label>
-      <label class="check"><input type="checkbox" id="pi.trustProjectFiles" /> Trust project-local files (--approve)</label>
     </fieldset>
 
     <fieldset>
       <legend>Runtime &amp; behavior</legend>
       <div class="field">
-        <label for="pythonPath">Python path</label>
-        <input type="text" id="pythonPath" placeholder="python" />
+        <label>Python path</label>
+        <div class="help" id="pythonResolved"></div>
       </div>
-      <div class="field">
-        <label for="maxRetries">Max plan repair attempts</label>
-        <input type="number" id="maxRetries" />
-      </div>
-      <div class="field">
-        <label for="ui.fontSize">Font size (px)</label>
-        <input type="number" id="ui.fontSize" min="8" max="24" />
-        <div class="help">0 = follow the VS Code font size.</div>
+      <div class="grid2 even">
+        <div class="field">
+          <label for="maxRetries">Max plan repair attempts</label>
+          <input type="number" id="maxRetries" />
+        </div>
+        <div class="field">
+          <label for="ui.fontSize">Font size (px)</label>
+          <input type="number" id="ui.fontSize" min="8" max="24" />
+          <div class="help">0 = follow the VS Code font size.</div>
+        </div>
       </div>
       <label class="check"><input type="checkbox" id="autoExecute" /> Auto-execute plan after generation</label>
       <div class="field">
@@ -359,7 +347,6 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
   function val(id) { const e = el(id); return e ? e.value : ''; }
   function num(id) { const v = parseFloat(val(id)); return isNaN(v) ? 0 : v; }
   function chk(id) { const e = el(id); return e ? e.checked : false; }
-  function list(id) { return val(id).split(',').map(function (s) { return s.trim(); }).filter(Boolean); }
   // Timeouts are stored in ms (the runtime contract) but edited in seconds.
   function toSeconds(ms) { return ms > 0 ? Math.round(ms / 1000) : 0; }
   function toMs(seconds) { return seconds > 0 ? Math.round(seconds * 1000) : 0; }
@@ -427,18 +414,15 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
     fillThinking('planner.thinking', s.planner.thinking);
     el('planner.timeout').value = toSeconds(s.planner.timeout);
     el('planner.systemPrompt').value = s.planner.systemPrompt || s.planner.systemPromptDefault;
-    el('pi.command').value = s.pi.command;
-    el('pi.mode').value = s.pi.mode;
     fillProvider('pi.provider', s.pi.provider || '');
     fillModels('pi.model', s.pi.provider || '', s.pi.model || '');
     fillThinking('pi.thinking', s.pi.thinking || '');
-    el('pi.tools').value = (s.pi.tools || []).join(', ');
-    el('pi.agentDir').value = s.pi.agentDir || '';
-    el('pi.allowedExtensions').value = (s.pi.allowedExtensions || []).join(', ');
     el('pi.timeout').value = toSeconds(s.pi.timeout);
-    el('pi.noSession').checked = !!s.pi.noSession;
-    el('pi.trustProjectFiles').checked = !!s.pi.trustProjectFiles;
-    el('pythonPath').value = s.pythonPath;
+    const hint = el('pythonResolved');
+    hint.textContent = s.pythonResolved
+      ? 'in use: ' + s.pythonResolved
+      : 'not found: "' + s.pythonPath + '" is not a working Python interpreter';
+    hint.classList.toggle('error', !s.pythonResolved);
     el('maxRetries').value = s.maxRetries;
     el('ui.fontSize').value = s.fontSize;
     el('autoExecute').checked = !!s.autoExecute;
@@ -463,19 +447,11 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
         systemPrompt: val('planner.systemPrompt')
       },
       pi: {
-        command: val('pi.command'),
-        mode: val('pi.mode'),
         provider: val('pi.provider'),
         model: val('pi.model'),
         thinking: val('pi.thinking'),
-        tools: list('pi.tools'),
-        agentDir: val('pi.agentDir'),
-        allowedExtensions: list('pi.allowedExtensions'),
-        timeout: toMs(num('pi.timeout')),
-        noSession: chk('pi.noSession'),
-        trustProjectFiles: chk('pi.trustProjectFiles')
+        timeout: toMs(num('pi.timeout'))
       },
-      pythonPath: val('pythonPath'),
       maxRetries: num('maxRetries'),
       fontSize: num('ui.fontSize'),
       autoExecute: chk('autoExecute')

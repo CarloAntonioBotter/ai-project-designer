@@ -1,4 +1,5 @@
 import * as path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import * as vscode from 'vscode';
 import { PiExecutionConfigPayload, PiModelInfo } from './pi-protocol';
 import { PiRunner, PiRuntimeReport } from './pi-runner';
@@ -27,6 +28,23 @@ export interface ExtensionConfig {
 
 function settings(): vscode.WorkspaceConfiguration {
   return vscode.workspace.getConfiguration('aiProjectDesigner');
+}
+
+/**
+ * Absolute interpreter behind a `pythonPath` setting (for display only): "python"
+ * is a PATH lookup, so the user needs to see what it actually resolves to.
+ * `undefined` means the configured command is not a working interpreter.
+ */
+export function resolvePython(pythonPath: string): string | undefined {
+  try {
+    const out = execFileSync(pythonPath, ['-c', 'import sys; print(sys.executable)'], {
+      encoding: 'utf8',
+      timeout: 5000,
+    }).trim();
+    return out || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function readConfig(): ExtensionConfig {

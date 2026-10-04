@@ -26,6 +26,7 @@ import {
   checkPiRuntime,
   listPiModels,
   readConfig,
+  resolvePython,
   runnerScriptPath,
   workspaceDefinedKeys,
 } from '../../pi/pi-config';
@@ -72,19 +73,13 @@ interface SettingsView {
     systemPromptDefault: string;
   };
   pi: {
-    command: string;
-    mode: string;
     provider?: string;
     model?: string;
     thinking?: string;
-    tools: string[];
-    agentDir?: string;
-    allowedExtensions: string[];
     timeout: number;
-    noSession: boolean;
-    trustProjectFiles: boolean;
   };
   pythonPath: string;
+  pythonResolved?: string;
   maxRetries: number;
   fontSize: number;
   autoExecute: boolean;
@@ -96,6 +91,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
   private session?: Session;
   private config: ExtensionConfig;
+  private pythonProbe?: { configured: string; resolved?: string };
   private runtime?: PiRuntimeReport;
   private piModels: PiModelInfo[] = [];
   private piModelsError?: string;
@@ -159,6 +155,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     if (this.busy) {
       return;
     }
+    if (this.reportUnusablePython()) { return; }
     const request = this.session?.request?.trim();
     if (!request) {
       void vscode.window.showWarningMessage('Enter a user request before generating a plan.');
@@ -189,6 +186,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         constraints: DEFAULT_CONSTRAINTS,
         systemPrompt: this.config.planner.systemPrompt,
         provider,
+        maxRepairAttempts: this.config.maxRetries,
         signal: this.abortController.signal,
         onProgress: (message) => this.postPlanProgress(message),
       });
@@ -225,6 +223,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     if (!session?.plan || this.busy) {
       return;
     }
+    if (this.reportUnusablePython()) { return; }
     this.busy = true;
     this.abortController = new AbortController();
     session.status = 'running';
@@ -266,6 +265,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       void vscode.window.showInformationMessage('No runnable task.');
       return;
     }
+    if (this.reportUnusablePython()) { return; }
     this.busy = true;
     this.abortController = new AbortController();
     try {
@@ -283,6 +283,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     if (this.busy || !task || task.status === 'running') {
       return;
     }
+    if (this.reportUnusablePython()) { return; }
     task.retryCount += 1;
     task.status = 'pending';
     this.busy = true;
@@ -360,13 +361,17 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       return;
     }
     const store = this.sessionStore();
-    const target = sessionId === this.session?.id ? this.session : undefined;
-    if (target) {
+    // Confirm for every session, not only the open one: deleting from the list is
+    // the same irreversible action.
+    const listed = store.listSessions().find((summary) => summary.id === sessionId);
+    const name = sessionId === this.session?.id ? this.session.name : listed?.name;
+    if (listed || sessionId === this.session?.id) {
+      // A modal dialog already renders its own Cancel button: list only the
+      // destructive action, anything else (or a dismissal) cancels.
       const confirmed = await vscode.window.showWarningMessage(
-        `Delete session "${target.name}"? This removes its plan and results permanently.`,
+        `Delete session "${name || sessionId}"? This removes its plan and results permanently.`,
         { modal: true },
-        'Delete',
-        'Cancel'
+        'Delete'
       );
       if (confirmed !== 'Delete') {
         return;
@@ -409,6 +414,31 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   }
 
   // -- configuration form --------------------------------------------------
+  /** Resolved interpreter for the current setting, probed once per value. */
+  private resolvedPython(): string | undefined {
+    const configured = this.config.pythonPath;
+    if (!this.pythonProbe || this.pythonProbe.configured !== configured) {
+      this.pythonProbe = { configured, resolved: resolvePython(configured) };
+    }
+    return this.pythonProbe.resolved;
+  }
+
+  /**
+   * Guard for every action that spawns the Python runner: the run stays
+   * clickable, the reason it cannot start is reported instead of surfacing as a
+   * task error later on.
+   */
+  private reportUnusablePython(): boolean {
+    if (this.resolvedPython()) {
+      return false;
+    }
+    void vscode.window.showWarningMessage(
+      `Cannot start the Python runner: "${this.config.pythonPath}" is not a working Python interpreter. ` +
+        'Set "Python path" in the AI Project Designer settings.'
+    );
+    return true;
+  }
+
   private plannerPiConfig(): PiExecutionConfigPayload {
     return {
       command: this.config.pi.command,
@@ -438,19 +468,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         systemPromptDefault: PLANNER_SYSTEM_PROMPT,
       },
       pi: {
-        command: config.pi.command,
-        mode: config.pi.mode,
         provider: config.pi.provider,
         model: config.pi.model,
         thinking: config.pi.thinking,
-        tools: config.pi.tools,
-        agentDir: config.pi.agentDir,
-        allowedExtensions: config.pi.allowedExtensions ?? [],
         timeout: config.pi.timeoutMs,
-        noSession: config.pi.noSession,
-        trustProjectFiles: config.pi.trustProjectFiles,
       },
       pythonPath: config.pythonPath,
+      pythonResolved: this.resolvedPython(),
       maxRetries: config.maxRetries,
       fontSize: config.fontSize,
       autoExecute: config.autoExecute,
@@ -467,18 +491,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       'planner.thinking': String(planner.thinking ?? ''),
       'planner.timeout': Math.max(1000, Number(planner.timeout ?? 300000)),
       'planner.systemPrompt': String(planner.systemPrompt ?? ''),
-      'pi.command': String(pi.command ?? 'pi'),
-      'pi.mode': 'json',
       'pi.provider': String(pi.provider ?? ''),
       'pi.model': String(pi.model ?? ''),
       'pi.thinking': String(pi.thinking ?? ''),
-      'pi.tools': Array.isArray(pi.tools) ? pi.tools : [],
-      'pi.agentDir': String(pi.agentDir ?? ''),
-      'pi.allowedExtensions': Array.isArray(pi.allowedExtensions) ? pi.allowedExtensions : [],
       'pi.timeout': Math.max(1000, Number(pi.timeout ?? 120000)),
-      'pi.noSession': pi.noSession !== false,
-      'pi.trustProjectFiles': Boolean(pi.trustProjectFiles),
-      pythonPath: String(raw.pythonPath ?? 'python'),
       maxRetries: Number(raw.maxRetries ?? 2),
       'ui.fontSize': Number(raw.fontSize ?? 0),
       autoExecute: Boolean(raw.autoExecute),

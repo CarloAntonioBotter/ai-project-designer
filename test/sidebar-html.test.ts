@@ -1,9 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { renderSidebarHtml } from '../src/ui/sidebar/sidebar-html';
 
 // renderSidebarHtml never touches the webview object, only emits the document.
 const html = renderSidebarHtml({} as never);
+
+// The controller imports 'vscode', so its confirmation flow is asserted on source.
+const providerSource = fs.readFileSync(
+  path.join(__dirname, '../../src/ui/sidebar/sidebar-provider.ts'),
+  'utf8'
+);
 
 test('sidebar renders a plan notice box and routes plan notices into it', () => {
   assert.match(html, /id="planNotice"/);
@@ -57,4 +65,75 @@ test('sidebar scopes the plan failure notice to a session still in progress', ()
     /const show = Boolean\(planNoticeText\) && !\(session && CONCLUDED_SESSION\[session\.status\]\)/
   );
   assert.match(html, /function setPlanNotice\(text\) \{\n    planNoticeText = text \|\| '';/);
+});
+
+test('sidebar frames each session row with a border', () => {
+  assert.match(html, /\.sessions li \{[\s\S]{0,300}border: 1px solid var\(--vscode-panel-border/);
+});
+
+test('deleting any session from the list asks for confirmation', () => {  assert.match(
+    providerSource,
+    /const listed = store\.listSessions\(\)\.find\(\(summary\) => summary\.id === sessionId\)/
+  );
+  assert.match(providerSource, /if \(listed \|\| sessionId === this\.session\?\.id\) \{/);
+  assert.match(providerSource, /confirmed !== 'Delete'/);
+  // The modal dialog brings its own Cancel button: a second one is confusing.
+  assert.doesNotMatch(providerSource, /\{ modal: true \},\n\s+'Delete',\n\s+'Cancel'/);
+  assert.doesNotMatch(
+    providerSource,
+    /const target = sessionId === this\.session\?\.id \? this\.session : undefined/
+  );
+});
+
+// Isolation and project trust stay defaults owned by the runtime, not form fields.
+test('sidebar keeps no-session and project-trust toggles out of the form', () => {
+  assert.doesNotMatch(html, /id="pi\.noSession"/);
+  assert.doesNotMatch(html, /id="pi\.trustProjectFiles"/);
+  assert.doesNotMatch(providerSource, /'pi\.noSession': pi\.noSession/);
+  assert.doesNotMatch(providerSource, /'pi\.trustProjectFiles': Boolean/);
+});
+
+// "python" is a PATH lookup: the field keeps the editable command, the real
+// interpreter is shown next to it instead of being written into the setting.
+test('settings show the resolved python interpreter without rewriting the setting', () => {
+  assert.match(html, /id="pythonResolved"/);
+  assert.match(html, /'in use: ' \+ s\.pythonResolved/);
+  assert.match(html, /is not a working Python interpreter/);
+  assert.match(html, /hint\.classList\.toggle\('error', !s\.pythonResolved\)/);
+  // Display only: the setting itself is edited in the VS Code settings.
+  assert.doesNotMatch(html, /id="pythonPath"/);
+  assert.doesNotMatch(providerSource, /pythonPath: String\(raw\.pythonPath/);
+  assert.match(providerSource, /pythonResolved: this\.resolvedPython\(\)/);
+  assert.match(providerSource, /this\.pythonProbe\.configured !== configured/);
+});
+
+// Generate/Run stay enabled, but a broken interpreter is reported on click.
+test('every runner action reports an unusable python interpreter', () => {
+  assert.match(providerSource, /private reportUnusablePython\(\): boolean \{/);
+  assert.match(providerSource, /is not a working Python interpreter/);
+  assert.equal(
+    (providerSource.match(/if \(this\.reportUnusablePython\(\)\) \{ return; \}/g) || []).length,
+    4
+  );
+});
+
+test('settings put max repair attempts and font size on one row', () => {
+  assert.match(
+    html,
+    /<div class="grid2 even">\s*<div class="field">\s*<label for="maxRetries">[\s\S]*?ui\.fontSize/
+  );
+  // Equal column widths for the pair, unlike the provider/model rows.
+  assert.match(html, /\.grid2\.even \{ grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1fr\); \}/);
+  // Provider/Thinking stay narrow so Model/Timeout keep the room.
+  assert.match(
+    html,
+    /\.grid2 \{ display: grid; grid-template-columns: minmax\(0, 1fr\) minmax\(0, 2fr\); gap: 8px; \}/
+  );
+});
+
+test('executor thinking and timeout share one 50/50 row', () => {
+  assert.match(
+    html,
+    /<div class="grid2 even">\s*<div class="field">\s*<label for="pi\.thinking">[\s\S]*?pi\.timeout/
+  );
 });

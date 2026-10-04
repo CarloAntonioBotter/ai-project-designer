@@ -3,11 +3,11 @@
 A VS Code extension for AI-assisted software/project design built on two clearly
 separated levels:
 
-- **Planner LLM** (Architect): turns a request + workspace context into a
-  validated, atomic JSON task plan. It may inspect the workspace with a
-  read-only tool allowlist; it can never write.
-- **Pi Agent (`pi.dev`)** (Executor): every task is executed by a **new isolated
-  Pi run** spawned through a **Python process boundary**.
+- **Planner LLM**: turns a request + workspace context into a validated,
+  atomic JSON task plan. Its Pi run gets a read-only tool allowlist; it can
+  never write.
+- **Pi Agent** (Executor): every task is executed by a **new isolated Pi run**
+  spawned through a **Python process boundary**.
 
 ```text
 User request -> Planner LLM -> validated plan -> Task specification
@@ -27,9 +27,9 @@ to produce a plan.
 
 ## Features
 
-- Dedicated **activity-bar sidebar** (not a chat) with a **Plan** tab and an
-  in-sidebar **Settings** panel (session list, user request, plan checklist
-  and per-task detail/logs on the Plan tab).
+- Dedicated **activity-bar sidebar** (not a chat) with a **Plan** tab (session
+  list, request, plan checklist, per-task detail/logs) and an in-sidebar
+  **Settings** tab.
 - **Persistent sessions** under `.ai-project/` (survive VS Code restarts).
 - **Planner runs on Pi too**: the Planner is a one-shot Pi run with a
   **read-only** tool allowlist (`read`, `grep`, `find`, `ls`), so both Planner
@@ -37,7 +37,8 @@ to produce a plan.
   separate LLM client or credentials exist in the extension.
 - **Task isolation is enforced and tested**: every task is a fresh Python
   process + fresh Pi invocation with `--no-session`, `--no-extensions`,
-  `--no-context-files`, `--no-approve` and a tool allowlist.
+  `--no-skills`, `--no-prompt-templates`, `--no-context-files`, `--no-themes`,
+  `--no-approve` and an explicit `--tools` allowlist.
 - **Artifact-based context transfer**: the next task receives only explicitly
   resolved artifacts, never a previous Pi conversation.
 - **Streaming progress**, **cancellation**, **retry** (as a new Pi run) and
@@ -52,7 +53,7 @@ to produce a plan.
 | VS Code | ^1.85 | |
 | Node.js | >= 18 (project tested on 22) | for building the extension |
 | Python | 3.11+ (tested on 3.12) | the mandatory task-execution boundary; stdlib only |
-| Pi | tested on 0.87.1 | must support `--mode json`, `--no-session`, `--tools` |
+| Pi | tested on 1.0.0 (`@earendil-works/pi-coding-agent`) | must support `--mode json`, `--no-session`, `--tools`, `--no-approve` |
 
 ## Install and verify Pi
 
@@ -66,7 +67,7 @@ From the extension run **`AI Project Designer: Check Pi Runtime`**, or directly:
 
 ```bash
 npm run check:pi
-# {"available": true, "version": "0.87.1", "jsonMode": true, "noSession": true, ...}
+# {"available": true, "version": "1.0.0", "jsonMode": true, "noSession": true, "toolAllowlist": true, ...}
 ```
 
 ## Build and run
@@ -80,49 +81,39 @@ Press `F5` in VS Code (Run Extension), or package with `vsce package`.
 
 ## Configure the Planner (a model configured in Pi)
 
-The Planner and the Executor both use models configured in the Pi agent. The
-Planner is a one-shot Pi run with read-only tools (`read`, `grep`, `find`,
-`ls`): it inherits Pi's authentication, provider and model catalog. Use the
-sidebar **Settings** tab (Save scope: User/Workspace) to pick the
-provider/model from the list discovered with `pi --list-models`, and a thinking
-level.
+The Planner and the Executor both use models configured in the Pi agent, and
+both are configured in the sidebar **Settings** tab (Save scope:
+User/Workspace) — no JSON editing is required:
 
-The Planner **system prompt** (Markdown) is editable in the same **Settings**
-tab, under *Planner system prompt (Markdown)*: a Markdown editor with a live
-**Preview** toggle and a *Reset to built-in* button. It maps to
-`aiProjectDesigner.planner.systemPrompt`; leaving it empty uses the built-in
-prompt defined in `src/llm/planner-prompt.ts`.
-
-```jsonc
-{
-  "aiProjectDesigner.planner.provider": "deepseek",     // Pi provider id
-  "aiProjectDesigner.planner.model": "deepseek-flash",  // required, a Pi model id
-  "aiProjectDesigner.planner.thinking": "high",         // off|minimal|low|medium|high|xhigh|max
-  "aiProjectDesigner.planner.timeout": 300000,
-  "aiProjectDesigner.planner.systemPrompt": ""         // Markdown, empty = built-in prompt
-}
-```
+- **Planner LLM — Provider / Model / Thinking**: picked from the catalog
+  discovered from the Pi agent (**Refresh models from Pi**). The Planner is a
+  one-shot Pi run with read-only tools (`read`, `grep`, `find`, `ls`): it
+  inherits Pi's authentication, provider and model catalog.
+- **Timeout (s)**: per-run planner timeout.
+- **Planner system prompt (Markdown)**: a Markdown editor with a live
+  **Preview** toggle and a *Reset to built-in* button. Leaving it empty uses
+  the built-in prompt defined in `src/llm/planner-prompt.ts`.
 
 Credentials are Pi's own (`~/.pi/agent`, provider env vars, `pi auth`); the
 extension never stores or requests an API key.
 
 ## Configure and authenticate Pi (Executor)
 
-```jsonc
-{
-  "aiProjectDesigner.pi.command": "pi",
-  "aiProjectDesigner.pi.mode": "json",
-  "aiProjectDesigner.pi.noSession": true,          // must stay true
-  "aiProjectDesigner.pi.timeout": 120000,
-  "aiProjectDesigner.pi.agentDir": "",             // optional PI_CODING_AGENT_DIR
-  "aiProjectDesigner.pi.provider": "deepseek",     // optional, forwarded to Pi
-  "aiProjectDesigner.pi.model": "deepseek-flash",  // optional, forwarded to Pi
-  "aiProjectDesigner.pi.thinking": "high",          // optional, forwarded to Pi
-  "aiProjectDesigner.pi.tools": ["read", "edit", "write", "bash", "grep", "find", "ls"],
-  "aiProjectDesigner.pi.trustProjectFiles": false, // keep false for untrusted repos
-  "aiProjectDesigner.pi.allowedExtensions": []
-}
-```
+The sidebar **Settings** tab (Save scope: User/Workspace) exposes exactly what
+the extension decides per run:
+
+- **Executor — Provider / Model / Thinking**: optional, forwarded to the Pi
+  CLI (`--provider` / `--model`); empty means Pi's own default.
+- **Timeout (s)**: per-run task timeout.
+
+Isolation is not a setting: every task runs ephemeral (`--no-session`) with
+project-local files ignored (`--no-approve`). Enabling
+`aiProjectDesigner.pi.trustProjectFiles` in the VS Code settings is the only way
+to opt out of the latter, and it is not offered in the sidebar.
+
+Everything else belongs to Pi itself: the executable, its config dir
+(`PI_CODING_AGENT_DIR`), the tool allowlist and extensions are read from Pi's
+own configuration. The extension adds only the isolation flags it needs.
 
 - **Provider/model selection belongs to Pi.** `pi.provider` / `pi.model` are
   just forwarded to the Pi CLI (`--provider` / `--model`); there is no HTTP LLM
@@ -131,6 +122,21 @@ extension never stores or requests an API key.
   vars such as `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`, OAuth via `pi auth`).
   They are never copied into extension session files.
 - Verify authentication with `pi auth check --provider <name> --json`.
+
+## Other Settings tab options
+
+- **Python path**: read-only, it shows the interpreter the runner uses
+  (`in use: <path>`), or a `not found` warning when it is not a working Python.
+  The command it resolves is `aiProjectDesigner.pythonPath` in the VS Code
+  settings — a bare name looked up in `PATH` (default `python`) or an absolute
+  path to a venv/pyenv interpreter. Generate/Run stay clickable: clicking them
+  reports the interpreter problem instead of failing later as a task error.
+- **Max plan repair attempts**: how many times a plan that fails validation is
+  sent back to the planner before the run fails.
+- **Font size (px)**: sidebar base size; `0` follows the VS Code font size.
+- **Auto-execute plan after generation**: start running the plan as soon as it
+  is generated.
+- **Save scope**: User or Workspace, i.e. where VS Code stores these values.
 
 ## Usage
 
@@ -225,7 +231,8 @@ Coverage highlights:
 - Pi runs with `--no-approve` (project-local files ignored) unless
   `pi.trustProjectFiles` is explicitly enabled, and with no extensions unless
   allow-listed in `pi.allowedExtensions`.
-- Pi tool access is constrained by an explicit `--tools` allowlist.
+- Pi loads no project resources, no skills, no prompt templates and no themes;
+  tool access is constrained by an explicit `--tools` allowlist.
 - No automatic git commits.
 - Path access for context files and artifacts is validated against directory
   escapes.
@@ -236,11 +243,11 @@ Coverage highlights:
 
 | Symptom | Cause / fix |
 | --- | --- |
-| `Pi not available: pi executable not found` | Pi is not on `PATH`. Set `aiProjectDesigner.pi.command` to the full path, or install Pi. On Windows a bare `pi` resolves to `pi.CMD` via `PATHEXT`. |
+| `Pi not available: pi executable not found` | Pi is not on `PATH`. Set `aiProjectDesigner.pi.command` in the VS Code settings to the full path, or install Pi. On Windows a bare `pi` resolves to `pi.CMD` via `PATHEXT`. |
 | Build/runtime says a mode is unsupported | The installed Pi is too old. Run `AI Project Designer: Check Pi Runtime`; upgrade Pi so `--mode json`, `--no-session` and `--tools` exist. |
-| Planner error `Set aiProjectDesigner.planner.model` | Pick a planner model that exists in Pi (`pi --list-models`). |
+| Planner error `Set aiProjectDesigner.planner.model` | Pick a planner model in the sidebar **Settings** tab (from the Pi catalog). |
 | Planner Pi run failed (auth/model) | Authenticate/configure that model in Pi itself. |
-| Task `timeout` | Raise `aiProjectDesigner.pi.timeout`, or split the task into smaller ones. |
+| Task `timeout` | Raise the Executor **Timeout (s)** in the sidebar **Settings**, or split the task into smaller ones. |
 | Task `cancelled` | You pressed **Stop**. Cancellation kills the Python runner and its Pi child; the task is never marked completed. |
 | Task `error` about isolation | `pi.noSession` must be `true`; remove `--continue`/`--resume` from any extra args. |
 | Pi needs authentication | Authenticate in Pi itself (`pi auth`, provider env vars, or OAuth). The extension never handles executor credentials. |
@@ -267,3 +274,9 @@ test/                    TypeScript node:test suite
 
 `PLANNING != EXECUTION`, `PLANNER MEMORY != PI EXECUTOR MEMORY`, and
 `TASK N CONTEXT != TASK N+1 PI SESSION` are structural, not conventions.
+
+## Author
+
+Carlo Antonio Botter.
+
+Released under the MIT License (see `LICENSE`).
