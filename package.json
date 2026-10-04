@@ -2,8 +2,12 @@
 	"name": "ai-project-designer",
 	"displayName": "AI Project Designer",
 	"description": "Plan projects with a Planner LLM and execute each task through an isolated Pi Agent run driven by a Python process boundary.",
-	"version": "0.1.53",
+	"version": "0.1.54",
 	"publisher": "local",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/CarloAntonioBotter/ai-project-designer.git"
+	},
 	"author": {
 		"name": "Carlo Antonio Botter"
 	},

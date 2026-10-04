@@ -60,6 +60,19 @@ to produce a plan.
 | Python | 3.11+ (tested on 3.12) | the mandatory task-execution boundary; stdlib only |
 | [Pi](https://pi.dev/) | tested on 1.0.0 (`@earendil-works/pi-coding-agent`) | must support `--mode json`, `--no-session`, `--tools`, `--no-approve` |
 
+## Install the extension in VS Code
+
+1. Download `ai-project-designer-<version>.vsix` from the
+   [latest release](https://github.com/CarloAntonioBotter/ai-project-designer/releases/latest).
+2. Install it, either:
+   - **VS Code UI**: Extensions view → `...` (Views and More Actions) →
+     **Install from VSIX...** → select the downloaded file; or
+   - **CLI**: `code --install-extension ai-project-designer-<version>.vsix`.
+3. Reload the window, then run **`AI Project Designer: Check Pi Runtime`**.
+
+The extension is not on the VS Code Marketplace (`publisher: local`): the VSIX
+attached to the GitHub release is the supported install path.
+
 ## Install and verify Pi
 
 The agent harness this extension drives lives at <https://pi.dev/>.
@@ -84,7 +97,8 @@ npm install
 npm run build          # tsc -> out/
 ```
 
-Press `F5` in VS Code (Run Extension), or package with `vsce package`.
+Press `F5` in VS Code (Run Extension), or `npx vsce package` to produce
+`ai-project-designer-<version>.vsix`.
 
 ## Configure the Planner (a model configured in Pi)
 
