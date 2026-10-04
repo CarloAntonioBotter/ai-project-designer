@@ -13,7 +13,7 @@ Non copiare codice, asset o implementazioni proprietarie di Pendant. Usa Pendant
 Realizza una VS Code extension che implementi un sistema di **AI-assisted software/project design** basato su due livelli distinti:
 
 1. **Architect / Planner LLM**: produce il piano strutturato e le specifiche operative dei task.
-2. **Pi Agent (`pi.dev`)**: è il **runtime agentico obbligatorio per l'esecuzione dei task**. L'Executor non deve essere implementato come una semplice chiamata HTTP diretta a un LLM: ogni attività operativa deve essere eseguita attraverso una nuova istanza/esecuzione dell'agente Pi.
+2. **Pi Agent** ([pi.dev](https://pi.dev/), *agent harness*, pacchetto npm `@earendil-works/pi-coding-agent`, CLI `pi`): è il **runtime agentico obbligatorio per l'esecuzione dei task**. In questo documento "Pi" indica sempre e solo questo agente, mai Raspberry Pi. L'Executor non deve essere implementato come una semplice chiamata HTTP diretta a un LLM: ogni attività operativa deve essere eseguita attraverso una nuova istanza/esecuzione dell'agente Pi.
 
 Il confine architetturale fondamentale è quindi:
 
@@ -25,7 +25,7 @@ EXECUTION / AGENTIC WORK
   = Pi Agent, una nuova esecuzione isolata per ogni task
 ```
 
-Pi è il componente responsabile del loop agentico, dell'uso degli strumenti e dell'interazione con il workspace durante l'esecuzione. Il progetto deve utilizzare Pi tramite la sua integrazione ufficiale CLI e/o SDK, preferendo la CLI quando è necessario mantenere il confine di processo richiesto dalla pipeline Python.
+Pi (l'agent harness `pi.dev`, non un Raspberry Pi) è il componente responsabile del loop agentico, dell'uso degli strumenti e dell'interazione con il workspace durante l'esecuzione. Il progetto deve utilizzare Pi tramite la sua integrazione ufficiale CLI e/o SDK, preferendo la CLI quando è necessario mantenere il confine di processo richiesto dalla pipeline Python.
 
 Il Planner non deve eseguire direttamente modifiche al repository. Il Planner deve solo trasformare una richiesta complessa in specifiche operative autosufficienti che Pi possa eseguire.
 

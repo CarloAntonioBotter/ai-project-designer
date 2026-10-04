@@ -9,6 +9,11 @@ separated levels:
 - **Pi Agent** (Executor): every task is executed by a **new isolated Pi run**
   spawned through a **Python process boundary**.
 
+> **Naming.** "Pi" in this document always means the **Pi agent harness**, the
+> coding agent this extension drives: <https://pi.dev/>, npm package
+> [`@earendil-works/pi-coding-agent`](https://www.npmjs.com/package/@earendil-works/pi-coding-agent),
+> CLI `pi`. Nothing to do with Raspberry Pi.
+
 ```text
 User request -> Planner LLM -> validated plan -> Task specification
              -> Python runner -> NEW isolated Pi run (no session)
@@ -53,9 +58,11 @@ to produce a plan.
 | VS Code | ^1.85 | |
 | Node.js | >= 18 (project tested on 22) | for building the extension |
 | Python | 3.11+ (tested on 3.12) | the mandatory task-execution boundary; stdlib only |
-| Pi | tested on 1.0.0 (`@earendil-works/pi-coding-agent`) | must support `--mode json`, `--no-session`, `--tools`, `--no-approve` |
+| [Pi](https://pi.dev/) | tested on 1.0.0 (`@earendil-works/pi-coding-agent`) | must support `--mode json`, `--no-session`, `--tools`, `--no-approve` |
 
 ## Install and verify Pi
+
+The agent harness this extension drives lives at <https://pi.dev/>.
 
 ```bash
 npm i -g @earendil-works/pi-coding-agent   # or your preferred install
