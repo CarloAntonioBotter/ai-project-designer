@@ -574,8 +574,9 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
       promptTaskId = task.id;
       el('taskPrompt').value = task.executorPrompt || '';
     }
-    // Editing is allowed only before the task has ever run.
+    // Editing is allowed only before the task has ever run, and never during a run.
     el('promptEditor').classList.toggle('hidden', Boolean(task.result));
+    el('savePrompt').disabled = state.busy;
     const log = (logs[taskId] || []).slice(-200).join('\\n');
     el('detail').innerHTML =
       '<p><strong>' + esc(task.id) + ' — ' + esc(task.title) + '</strong></p>' +
@@ -583,7 +584,8 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
       '<p class="meta">dependencies: ' + esc((task.dependencies || []).join(', ') || 'none') + ' · attempt: ' + esc(task.attempt) + '</p>' +
       (task.summary ? '<div class="md summary">' + renderMarkdown(task.summary) + '</div>' : '') +
       (task.errors && task.errors.length ? '<p class="error">' + task.errors.map(esc).join('<br>') + '</p>' : '') +
-      '<div class="row"><button class="secondary" data-retry="' + esc(task.id) + '">Retry Task</button></div>' +
+      '<div class="row"><button class="secondary" data-retry="' + esc(task.id) + '"' +
+        (state.busy ? ' disabled' : '') + '>Retry Task</button></div>' +
       '<pre class="log">' + esc(log) + '</pre>';
   }
 

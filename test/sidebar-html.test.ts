@@ -39,3 +39,8 @@ test('sidebar drops the previous session logs when the active session changes', 
   assert.match(html, /nextSessionId !== lastSessionId/);
   assert.match(html, /delete logs\[key\]/);
 });
+
+test('sidebar disables Retry Task and Save Prompt while a run is busy', () => {
+  assert.match(html, /el\('savePrompt'\)\.disabled = state\.busy/);
+  assert.match(html, /data-retry="[\s\S]{0,40}state\.busy \? ' disabled' : ''/);
+});

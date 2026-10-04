@@ -280,7 +280,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   async retryTask(taskId?: string): Promise<void> {
     const tasks = this.session?.plan?.tasks ?? [];
     const task = taskId ? tasks.find((candidate) => candidate.id === taskId) : nextRunnableTask(tasks);
-    if (!task || task.status === 'running') {
+    if (this.busy || !task || task.status === 'running') {
       return;
     }
     task.retryCount += 1;
