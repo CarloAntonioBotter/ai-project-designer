@@ -80,7 +80,7 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
   .field .help { opacity: 0.65; margin-top: 2px; }
   .check { display: flex; align-items: center; gap: 6px; margin: 6px 0; }
   .check input { width: auto; }
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .grid2 { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 8px; }
   .tasks { list-style: none; padding: 0; margin: 0; }
   .task { border: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35)); border-radius: var(--radius); padding: 6px 8px; margin-bottom: 4px; cursor: pointer; }
   .task:hover { background: var(--vscode-list-hoverBackground); }
