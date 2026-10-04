@@ -79,10 +79,14 @@ test('sidebar fills each session row with the dark grey frame', () => {
   assert.match(html, /\.sessions li:hover \{ background: #4a4a4a; \}/);
 });
 
-test('sidebar keeps the delete icon visible on the dark session frame', () => {
-  // Theme-dependent secondary button colors can blend into the dark fill.
-  assert.match(html, /\.sessions \.session-del \{\n    background: transparent; color: #f0f0f0; border: 1px solid #8a8a8a;/);
-  assert.match(html, /\.sessions \.session-del:hover \{ background: rgba\(255, 255, 255, 0\.18\); \}/);
+test('sidebar keeps the delete control a visible red trash on the dark frame', () => {
+  // Explicit colors: the secondary button ones are theme-dependent and can blend
+  // into the dark fill. The icon is inline SVG, not a glyph.
+  assert.match(html, /\.sessions \.session-del \{\n    background: rgba\(244, 135, 113, 0\.16\); color: var\(--vscode-charts-red, #f48771\);/);
+  assert.match(html, /\.sessions \.session-del \{[\s\S]{0,120}border: none; border-radius: 50%;/);
+  assert.match(html, /\.sessions \.session-del svg \{[\s\S]{0,120}stroke: currentColor;/);
+  assert.match(html, /<button type="button" class="session-del"[^>]*aria-label="Delete session"/);
+  assert.match(html, /<button type="button" class="session-del"[\s\S]{0,400}<svg viewBox="0 0 16 16"[\s\S]{0,400}<\/svg>[\s\S]{0,60}<\/button>/);
 });
 
 test('deleting any session from the list asks for confirmation', () => {  assert.match(

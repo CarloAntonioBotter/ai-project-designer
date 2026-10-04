@@ -3,6 +3,13 @@
 import * as vscode from 'vscode';
 import { renderMarkdown } from './markdown';
 
+/** Inline trash icon: the webview loads no codicon font, and a glyph would render
+ *  with whatever emoji font the OS happens to pick. */
+const TRASH_ICON =
+  '<svg viewBox="0 0 16 16" aria-hidden="true">' +
+  '<path d="M2.5 4.5h11M6.5 4.5V3.2a.7.7 0 0 1 .7-.7h1.6a.7.7 0 0 1 .7.7v1.3M4.3 4.5l.55 8.1a1.1 1.1 0 0 0 1.1 1h4.1a1.1 1.1 0 0 0 1.1-1l.55-8.1M6.9 7v4.2M9.1 7v4.2"/>' +
+  '</svg>';
+
 function nonce(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   let value = '';
@@ -120,17 +127,22 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
   }
   .sessions li:hover { background: #4a4a4a; }
   .sessions .session-name { flex: 1 1 auto; cursor: pointer; overflow-wrap: anywhere; }
-  /* Icon buttons share one square box, so the stop control matches the ✕ buttons. */
+  /* Icon buttons share one square box, so the stop control matches the trash buttons. */
   .sessions .session-del, #stop {
     flex: none; box-sizing: border-box; width: 1.6em; height: 1.6em; padding: 0; margin: 0;
     display: flex; align-items: center; justify-content: center;
   }
-  /* Explicit ink and outline: the secondary button colors are theme-dependent and
-     can blend into the dark fill, leaving a borderless, invisible ✕. */
+  /* Round red-on-dark control: the trash reads as destructive at a glance, and its
+     colors are explicit because the secondary button colors are theme-dependent. */
   .sessions .session-del {
-    background: transparent; color: #f0f0f0; border: 1px solid #8a8a8a;
+    background: rgba(244, 135, 113, 0.16); color: var(--vscode-charts-red, #f48771);
+    border: none; border-radius: 50%;
   }
-  .sessions .session-del:hover { background: rgba(255, 255, 255, 0.18); }
+  .sessions .session-del:hover { background: rgba(244, 135, 113, 0.24); outline: 1px solid currentColor; }
+  .sessions .session-del svg {
+    width: 1.2em; height: 1.2em; fill: none;
+    stroke: currentColor; stroke-width: 1.2; stroke-linecap: round;
+  }
   .busy { display: flex; align-items: center; gap: 8px; }
   #stop {
     margin-left: auto;
@@ -522,7 +534,9 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
     el('sessions').innerHTML = state.sessions.map(function (s) {
       return '<li data-session="' + esc(s.id) + '">' +
         '<span class="session-name">' + esc(s.name) + ' <span class="meta">· ' + esc(s.status) + '</span></span>' +
-        '<button type="button" class="secondary session-del" data-delete="' + esc(s.id) + '" title="Delete session">✕</button>' +
+        '<button type="button" class="session-del" data-delete="' + esc(s.id) + '" title="Delete session" aria-label="Delete session">' +
+          ${TRASH_ICON} +
+        '</button>' +
         '</li>';
     }).join('');
 
