@@ -535,7 +535,7 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
       return '<li data-session="' + esc(s.id) + '">' +
         '<span class="session-name">' + esc(s.name) + ' <span class="meta">· ' + esc(s.status) + '</span></span>' +
         '<button type="button" class="session-del" data-delete="' + esc(s.id) + '" title="Delete session" aria-label="Delete session">' +
-          ${TRASH_ICON} +
+          ${JSON.stringify(TRASH_ICON)} +
         '</button>' +
         '</li>';
     }).join('');

@@ -79,6 +79,17 @@ test('sidebar fills each session row with the dark grey frame', () => {
   assert.match(html, /\.sessions li:hover \{ background: #4a4a4a; \}/);
 });
 
+test('sidebar emits a webview script that parses', () => {
+  // The document is built by string interpolation, so a value dropped in unescaped
+  // (a raw icon, say) becomes a SyntaxError that silently kills the whole sidebar:
+  // no sessions, no plan, no tasks. Regex assertions cannot see that, this can.
+  const scripts = [...html.matchAll(/<script nonce="[^"]+">([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+  assert.ok(scripts.length > 0, 'no inline script found');
+  for (const script of scripts) {
+    assert.doesNotThrow(() => new Function(script));
+  }
+});
+
 test('sidebar keeps the delete control a visible red trash on the dark frame', () => {
   // Explicit colors: the secondary button ones are theme-dependent and can blend
   // into the dark fill. The icon is inline SVG, not a glyph.
@@ -86,7 +97,9 @@ test('sidebar keeps the delete control a visible red trash on the dark frame', (
   assert.match(html, /\.sessions \.session-del \{[\s\S]{0,120}border: none; border-radius: 50%;/);
   assert.match(html, /\.sessions \.session-del svg \{[\s\S]{0,120}stroke: currentColor;/);
   assert.match(html, /<button type="button" class="session-del"[^>]*aria-label="Delete session"/);
-  assert.match(html, /<button type="button" class="session-del"[\s\S]{0,400}<svg viewBox="0 0 16 16"[\s\S]{0,400}<\/svg>[\s\S]{0,60}<\/button>/);
+  // Emitted as a quoted JS string literal, not a bare token in the generated script.
+  assert.match(html, /<button type="button" class="session-del"[^>]*>' \+[\s\S]{0,20}"<svg viewBox=/);
+  assert.match(html, /<\/svg>" \+[\s\S]{0,40}<\/button>/);
 });
 
 test('deleting any session from the list asks for confirmation', () => {  assert.match(
