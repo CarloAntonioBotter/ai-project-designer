@@ -335,9 +335,11 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
   let lastSessionId;
   let liveStatus = '';
   let promptTaskId;
+  let planNoticeText = '';
   const logs = {};
 
   const STATUS_ICON = { pending: '○', running: '●', completed: '✓', failed: '✗', blocked: '⊘', skipped: '–' };
+  const CONCLUDED_SESSION = { completed: 1, failed: 1, cancelled: 1 };
 
   function esc(value) {
     return String(value == null ? '' : value)
@@ -558,6 +560,9 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
     el('generate').disabled = state.busy;
     el('runAll').disabled = state.busy || !session || !session.plan;
     el('stop').disabled = !state.busy;
+    el('newSession').disabled = state.busy;
+    el('refresh').disabled = state.busy;
+    renderPlanNotice();
 
     // Always re-render: with no selection (e.g. a new session) renderDetail hides the section.
     renderDetail(state.detailTaskId);
@@ -655,10 +660,18 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
     }
   });
 
-  function setPlanNotice(text) {
+  // A failure message belongs to the session that produced it: it is only shown while a session
+  // that is still in progress is selected, and dropped as soon as the selection changes.
+  function renderPlanNotice() {
     const box = el('planNotice');
-    box.textContent = text || '';
-    box.classList.toggle('hidden', !text);
+    const session = state.session;
+    const show = Boolean(planNoticeText) && !(session && CONCLUDED_SESSION[session.status]);
+    box.textContent = show ? planNoticeText : '';
+    box.classList.toggle('hidden', !show);
+  }
+  function setPlanNotice(text) {
+    planNoticeText = text || '';
+    renderPlanNotice();
   }
   function setNotice(text, ok) {
     const box = el('settingsNotice');

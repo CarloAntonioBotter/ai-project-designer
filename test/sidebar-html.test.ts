@@ -44,3 +44,17 @@ test('sidebar disables Retry Task and Save Prompt while a run is busy', () => {
   assert.match(html, /el\('savePrompt'\)\.disabled = state\.busy/);
   assert.match(html, /data-retry="[\s\S]{0,40}state\.busy \? ' disabled' : ''/);
 });
+
+test('sidebar disables New Session and Refresh Context while a run is busy', () => {
+  assert.match(html, /el\('newSession'\)\.disabled = state\.busy/);
+  assert.match(html, /el\('refresh'\)\.disabled = state\.busy/);
+});
+
+test('sidebar scopes the plan failure notice to a session still in progress', () => {
+  assert.match(html, /const CONCLUDED_SESSION = \{ completed: 1, failed: 1, cancelled: 1 \}/);
+  assert.match(
+    html,
+    /const show = Boolean\(planNoticeText\) && !\(session && CONCLUDED_SESSION\[session\.status\]\)/
+  );
+  assert.match(html, /function setPlanNotice\(text\) \{\n    planNoticeText = text \|\| '';/);
+});

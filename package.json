@@ -2,7 +2,7 @@
 	"name": "ai-project-designer",
 	"displayName": "AI Project Designer",
 	"description": "Plan projects with an Architect LLM and execute each task through an isolated Pi Agent run driven by a Python process boundary.",
-	"version": "0.1.28",
+	"version": "0.1.29",
 	"publisher": "local",
 	"license": "MIT",
 	"engines": {
