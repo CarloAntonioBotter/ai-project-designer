@@ -73,11 +73,16 @@ test('sidebar scopes the plan failure notice to a session still in progress', ()
   assert.match(html, /function setPlanNotice\(text\) \{\n    planNoticeText = text \|\| '';/);
 });
 
-test('sidebar fills each session row with the light grey frame', () => {
-  // The fill must stay lighter than the solid blue buttons, with dark ink on it.
-  assert.match(html, /\.sessions li \{[\s\S]{0,300}background: #d9d9d9; color: #1f1f1f;/);
-  assert.match(html, /\.sessions li \{[\s\S]{0,300}border: 1px solid #ababab;/);
-  assert.match(html, /\.sessions li:hover \{ background: #c9c9c9; \}/);
+test('sidebar fills each session row with the dark grey frame', () => {
+  assert.match(html, /\.sessions li \{[\s\S]{0,300}background: #3d3d3d; color: #f0f0f0;/);
+  assert.match(html, /\.sessions li \{[\s\S]{0,300}border: 1px solid #5a5a5a;/);
+  assert.match(html, /\.sessions li:hover \{ background: #4a4a4a; \}/);
+});
+
+test('sidebar keeps the delete icon visible on the dark session frame', () => {
+  // Theme-dependent secondary button colors can blend into the dark fill.
+  assert.match(html, /\.sessions \.session-del \{\n    background: transparent; color: #f0f0f0; border: 1px solid #8a8a8a;/);
+  assert.match(html, /\.sessions \.session-del:hover \{ background: rgba\(255, 255, 255, 0\.18\); \}/);
 });
 
 test('deleting any session from the list asks for confirmation', () => {  assert.match(
