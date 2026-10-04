@@ -16,4 +16,5 @@ node_modules/**
 .ai-project/**
 pi_err.txt
 progetto.md
+resources/make_icon.py
 _repro.js

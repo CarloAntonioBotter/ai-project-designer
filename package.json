@@ -2,7 +2,7 @@
 	"name": "ai-project-designer",
 	"displayName": "AI Project Designer",
 	"description": "Plan projects with a Planner LLM and execute each task through an isolated Pi Agent run driven by a Python process boundary.",
-	"version": "0.1.54",
+	"version": "0.1.55",
 	"publisher": "local",
 	"repository": {
 		"type": "git",
@@ -20,6 +20,7 @@
 		"Other"
 	],
 	"main": "./out/src/extension.js",
+	"icon": "resources/icon.png",
 	"activationEvents": [
 		"onView:aiProjectDesigner.sidebar"
 	],
