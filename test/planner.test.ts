@@ -99,3 +99,19 @@ test('generatePlan reports the offending response when no JSON is ever produced'
     }
   );
 });
+
+test('the planner is told to format executorPrompt with one instruction per line', async () => {
+  let system = '';
+  const provider: LLMProvider = {
+    id: 'fake',
+    model: 'fake-model',
+    async generate(request: LLMRequest): Promise<LLMResponse> {
+      system = request.system ?? '';
+      return { text: VALID_PLAN };
+    },
+  };
+  await generatePlan(baseInput(provider));
+  // A single wall-of-text paragraph is unusable in the sidebar's prompt box.
+  assert.match(system, /one instruction per line/);
+  assert.match(system, /never a single wall-of-text paragraph/);
+});

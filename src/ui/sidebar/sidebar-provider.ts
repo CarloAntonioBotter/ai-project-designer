@@ -644,6 +644,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         environment: {},
       });
       task.context = runContext;
+      // Publish the injected context before the run: the Context block must not wait for the first tool call.
+      await this.pushState();
 
       const result = await executeTask({
         session,
@@ -890,6 +892,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       errors: task.result?.errors ?? [],
       attempt: task.result?.attempt ?? task.retryCount + 1,
       filesChanged: task.result?.filesChanged ?? [],
+      // Chars of the context injected into this attempt: the sidebar shows the budget bar from it.
+      contextFiles: (task.context?.files ?? []).map((file) => ({ chars: file.content.length })),
     };
   }
 }

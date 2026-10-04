@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { renderSidebarHtml } from '../src/ui/sidebar/sidebar-html';
+import { MAX_TOTAL_CONTEXT_CHARS } from '../src/orchestration/context-builder';
 
 // renderSidebarHtml never touches the webview object, only emits the document.
 const html = renderSidebarHtml({} as never);
@@ -40,7 +41,48 @@ test('sidebar exposes an editable executor prompt for the selected task', () => 
     html,
     /el\('promptEditor'\)\.classList\.toggle\('hidden', Boolean\(task\.result\)\)/
   );
-  assert.doesNotMatch(html, /details class="prompt"/);
+});
+
+test('sidebar nests the executor prompt in the detail frame and collapses it', () => {
+  // Prompt sits inside #detail, next to the re-rendered body, so it never gets wiped.
+  assert.match(html, /<div id="detailBody"><\/div>\s*<div id="contextBox"[\s\S]*?<details id="promptEditor" class="collapse hidden">/);
+  // The prompt sits above the execution log, not the other way round.
+  assert.match(html, /<details id="promptEditor"[\s\S]*?<\/details>\s*<details id="logBox"/);
+  assert.match(html, /<summary>Executor prompt \(editable before the first run\)<\/summary>/);
+  assert.match(html, /el\('detailBody'\)\.innerHTML =/);
+  assert.doesNotMatch(html, /el\('detail'\)\.innerHTML =/);
+});
+
+test('sidebar collapses the execution log and keeps the toggle across log lines', () => {
+  // Static <details> under the prompt: the log text is written in place, so the element
+  // (and its open/closed state) is never rebuilt by a log line.
+  // Collapsed by default: the log is revealed by clicking the toggle.
+  assert.match(html, /<details id="logBox" class="collapse">\s*<summary>Execution<\/summary>\s*<pre id="log" class="log"><\/pre>/);
+  assert.doesNotMatch(html, /<details id="logBox" class="collapse" open>/);
+  assert.match(html, /el\('log'\)\.textContent = log;/);
+  assert.doesNotMatch(html, /logOpen/);
+  // Native details, so the toggle needs no click handler of its own.
+  assert.match(html, /details\.collapse > summary::before/);
+  assert.match(html, /details\.collapse\[open\] > summary::before/);
+});
+
+test('sidebar joins the log with an escaped newline', () => {
+  // The webview script lives in a template literal: the escape must reach the browser intact,
+  // where it becomes the line separator of the <pre>.
+  assert.ok(html.includes(".join('\\n')"), 'log join must escape the newline');
+});
+
+test('sidebar shows the context budget bar of the running attempt', () => {
+  // Labelled, no toggle and no file list: the bar appears on its own once a run built its context.
+  assert.match(html, /<div id="contextBox" class="hidden">\s*<p class="label">Context used<\/p>\s*<div id="contextBar" class="bar"><span id="contextFill"><\/span><\/div>/);
+  assert.doesNotMatch(html, /<details id="contextBox"/);
+  assert.doesNotMatch(html, /ctx-src/);
+  assert.ok(html.includes(`const CONTEXT_BUDGET = ${MAX_TOTAL_CONTEXT_CHARS};`), 'the bar must use the real budget');
+  // Injected files only: what the agent reads on its own is not ours to spend.
+  assert.match(html, /const used = injected\.reduce\(function \(sum, file\) \{ return sum \+ \(file\.chars \|\| 0\); \}, 0\);/);
+  assert.match(html, /const pct = Math\.min\(100, Math\.round\(\(used \/ CONTEXT_BUDGET\) \* 100\)\);/);
+  assert.match(html, /el\('contextBox'\)\.classList\.toggle\('hidden', injected\.length === 0\)/);
+  assert.match(html, /el\('contextBar'\)\.classList\.toggle\('full', pct >= 90\)/);
 });
 
 test('sidebar drops the previous session logs when the active session changes', () => {
@@ -74,9 +116,9 @@ test('sidebar scopes the plan failure notice to a session still in progress', ()
 });
 
 test('sidebar fills each session row with the dark grey frame', () => {
-  assert.match(html, /\.sessions li \{[\s\S]{0,300}background: #3d3d3d; color: #f0f0f0;/);
-  assert.match(html, /\.sessions li \{[\s\S]{0,300}border: 1px solid #5a5a5a;/);
-  assert.match(html, /\.sessions li:hover \{ background: #4a4a4a; \}/);
+  assert.match(html, /\.sessions li \{[\s\S]{0,300}background: #232323; color: #f0f0f0;/);
+  assert.match(html, /\.sessions li \{[\s\S]{0,300}border: 1px solid #3a3a3a;/);
+  assert.match(html, /\.sessions li:hover \{ background: #303030; \}/);
 });
 
 test('sidebar emits a webview script that parses', () => {
@@ -167,4 +209,13 @@ test('executor thinking and timeout share one 50/50 row', () => {
     html,
     /<div class="grid2 even">\s*<div class="field">\s*<label for="pi\.thinking">[\s\S]*?pi\.timeout/
   );
+});
+
+test('sidebar textareas grow with their content instead of scrolling', () => {
+  // resize: none hides the native grabber; the height is driven by scrollHeight.
+  assert.match(html, /textarea \{ min-height: 90px; resize: none; overflow: hidden; \}/);
+  assert.match(html, /area\.style\.height = 'auto';/);
+  assert.match(html, /area\.style\.height = \(area\.scrollHeight/);
+  assert.match(html, /function growAll\(\) \{ document\.querySelectorAll\('textarea'\)\.forEach\(grow\); \}/);
+  assert.match(html, /addEventListener\('input'/);
 });

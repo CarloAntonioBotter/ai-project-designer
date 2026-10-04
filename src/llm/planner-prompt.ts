@@ -15,7 +15,7 @@ Rules:
 - Return ONLY a JSON object. No prose, no markdown fences.
 - Produce atomic tasks: one task = one concrete objective.
 - Every task must be self-sufficient: a cheaper execution agent will run it with no knowledge of this plan or any previous conversation.
-- Populate executorPrompt with the complete, standalone prompt for the execution agent.
+- Populate executorPrompt with the complete, standalone prompt for the execution agent: plain text with one instruction per line, never a single wall-of-text paragraph. Number the requirements and put the acceptance criteria on their own lines.
 - Include explicit acceptanceCriteria and expectedOutput for every task.
 - Reference files with workspace-relative paths.
 - Use explicit dependencies (task ids) when a task requires another task's output.
@@ -32,7 +32,7 @@ JSON schema:
       "order": number,              // 1-based
       "dependencies": string[],     // task ids
       "objective": string,
-      "executorPrompt": string,     // complete standalone prompt for the executor
+      "executorPrompt": string,     // complete standalone prompt for the executor, one instruction per line
       "executorInstructions": string[],
       "filesToRead": string[],
       "filesToModify": string[],

@@ -1,6 +1,7 @@
 /** Static HTML/CSS/JS for the sidebar webview: Plan tab + Settings tab. */
 
 import * as vscode from 'vscode';
+import { MAX_TOTAL_CONTEXT_CHARS } from '../../orchestration/context-builder';
 import { renderMarkdown } from './markdown';
 
 /** Inline trash icon: the webview loads no codicon font, and a glyph would render
@@ -67,7 +68,7 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
     border: 1px solid var(--vscode-input-border, rgba(128,128,128,0.4));
     border-radius: var(--radius); padding: 5px 6px; font-family: inherit; font-size: inherit;
   }
-  textarea { min-height: 90px; resize: none; }
+  textarea { min-height: 90px; resize: none; overflow: hidden; }
   textarea:focus, input:focus, select:focus {
     outline: none;
     border-color: var(--vscode-input-focusBorder, var(--vscode-focusBorder));
@@ -107,6 +108,16 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
   .s-failed { color: var(--vscode-charts-red, #f48771); }
   .s-blocked, .s-skipped { color: var(--vscode-descriptionForeground); }
   .detail { margin-top: 8px; padding: 8px; border-radius: var(--radius); border-left: 3px solid var(--vscode-focusBorder); background: var(--vscode-textBlockQuote-background); }
+  /* Collapsible blocks are native <details>: no toggle JS. The summary reuses the
+     section-header style so both blocks read as siblings of the h2 sections. */
+  details.collapse > summary {
+    list-style: none; cursor: pointer; margin: 6px 0 0;
+    text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.75; font-weight: 600;
+  }
+  details.collapse > summary:hover { opacity: 1; }
+  details.collapse > summary::-webkit-details-marker { display: none; }
+  details.collapse > summary::before { content: '\u25B8\u00a0'; }
+  details.collapse[open] > summary::before { content: '\u25BE\u00a0'; }
   .md > :first-child { margin-top: 0; }
   .md > :last-child { margin-bottom: 0; }
   .md pre { max-height: none; }
@@ -114,6 +125,11 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
   pre { white-space: pre-wrap; word-break: break-word; max-height: 220px; overflow: auto; }
   .log { background: var(--vscode-textCodeBlock-background); padding: 6px; border-radius: var(--radius); }
   .error { color: var(--vscode-charts-red, #f48771); }
+  .label { margin: 6px 0 0; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.75; font-weight: 600; }
+  .bar { height: 6px; margin: 2px 0 6px; border-radius: 3px; background: var(--vscode-input-background, #3c3c3c); overflow: hidden; }
+  .bar > span { display: block; height: 100%; background: var(--vscode-charts-blue, #317AC6); }
+  /* Near the budget the injected files start being dropped, so the fill turns red. */
+  .bar.full > span { background: var(--vscode-charts-red, #f48771); }
   .ok { color: var(--vscode-charts-green, #89d185); }
   .notice { margin: 8px 0; padding: 6px 8px; border-radius: var(--radius); background: var(--vscode-textCodeBlock-background); }
   .sessions { list-style: none; padding: 0; margin: 0; }
@@ -122,10 +138,10 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
      keep the two in sync. */
   .sessions li {
     display: flex; align-items: center; gap: 6px; padding: 4px 6px; margin-bottom: 4px;
-    background: #3d3d3d; color: #f0f0f0;
-    border: 1px solid #5a5a5a; border-radius: var(--radius);
+    background: #232323; color: #f0f0f0;
+    border: 1px solid #3a3a3a; border-radius: var(--radius);
   }
-  .sessions li:hover { background: #4a4a4a; }
+  .sessions li:hover { background: #303030; }
   .sessions .session-name { flex: 1 1 auto; cursor: pointer; overflow-wrap: anywhere; }
   /* Icon buttons share one square box, so the stop control matches the trash buttons. */
   .sessions .session-del, #stop {
@@ -222,16 +238,27 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
 
     <div id="detailSection" class="hidden">
       <h2>Task Detail</h2>
-      <div id="detail" class="detail"></div>
-      <div id="promptEditor" class="hidden">
-        <div class="field">
-          <label for="taskPrompt">Executor prompt (editable before the first run)</label>
-          <textarea id="taskPrompt" class="md" spellcheck="false"></textarea>
-          <div class="help">Used by this task's first run.</div>
+      <div id="detail" class="detail">
+        <div id="detailBody"></div>
+        <div id="contextBox" class="hidden">
+          <p class="label">Context used</p>
+          <div id="contextBar" class="bar"><span id="contextFill"></span></div>
+          <div id="contextMeta" class="meta"></div>
         </div>
-        <div class="row">
-          <button id="savePrompt">Save Prompt</button>
-        </div>
+        <details id="promptEditor" class="collapse hidden">
+          <summary>Executor prompt (editable before the first run)</summary>
+          <div class="field">
+            <textarea id="taskPrompt" class="md" spellcheck="false"></textarea>
+            <div class="help">Used by this task's first run.</div>
+          </div>
+          <div class="row">
+            <button id="savePrompt">Save Prompt</button>
+          </div>
+        </details>
+        <details id="logBox" class="collapse">
+          <summary>Execution</summary>
+          <pre id="log" class="log"></pre>
+        </details>
       </div>
     </div>
   </div>
@@ -342,6 +369,8 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
 <script nonce="${n}">
   const vscode = acquireVsCodeApi();
   const renderMarkdown = ${markdownSource};
+  // The context budget the orchestrator enforces when it builds the task context.
+  const CONTEXT_BUDGET = ${MAX_TOTAL_CONTEXT_CHARS};
   let state = { tasks: [], sessions: [], busy: false, settings: null };
   let activeTab = 'plan';
   let settingsDirty = false;
@@ -360,6 +389,22 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
   function el(id) { return document.getElementById(id); }
+
+  // Auto-grow: the field always shows its whole content, so it never scrolls.
+  // Hidden elements have no layout to measure, so they are grown on the next pass.
+  function grow(area) {
+    if (!area.offsetParent) { return; }
+    area.style.height = 'auto';
+    area.style.height = (area.scrollHeight + area.offsetHeight - area.clientHeight) + 'px';
+  }
+  function growAll() { document.querySelectorAll('textarea').forEach(grow); }
+  document.addEventListener('input', function (event) {
+    if (event.target && event.target.tagName === 'TEXTAREA') { grow(event.target); }
+  });
+  // <details> toggles its own visibility, which no other hook here observes.
+  document.addEventListener('toggle', growAll, true);
+  // The sidebar can be resized, which rewraps the text and changes every height.
+  window.addEventListener('resize', growAll);
   // One base size for the whole sidebar; 0 means "inherit the VS Code size".
   function applyFontSize() {
     const size = state.settings && state.settings.fontSize;
@@ -368,6 +413,7 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
     } else {
       document.documentElement.style.removeProperty('--ui-font-size');
     }
+    growAll();
   }
   function val(id) { const e = el(id); return e ? e.value : ''; }
   function num(id) { const v = parseFloat(val(id)); return isNaN(v) ? 0 : v; }
@@ -383,6 +429,7 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
     el('planView').classList.toggle('hidden', tab !== 'plan');
     el('settingsView').classList.toggle('hidden', tab !== 'settings');
     if (tab === 'settings' && !settingsDirty) { populateSettings(); }
+    growAll();
   }
 
   el('tabPlan').addEventListener('click', function () { setTab('plan'); });
@@ -508,6 +555,7 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
   el('resetPrompt').addEventListener('click', function () {
     const s = state.settings;
     el('planner.systemPrompt').value = (s && s.planner.systemPromptDefault) || '';
+    grow(el('planner.systemPrompt'));
     settingsDirty = true;
     if (!el('promptPreview').classList.contains('hidden')) {
       el('promptPreview').innerHTML = renderMarkdown(el('planner.systemPrompt').value);
@@ -570,6 +618,7 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
     // Always re-render: with no selection (e.g. a new session) renderDetail hides the section.
     renderDetail(state.detailTaskId);
     if (activeTab === 'settings' && !settingsDirty) { populateSettings(); }
+    growAll();
   }
 
   function renderDetail(taskId) {
@@ -585,16 +634,31 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
     // Editing is allowed only before the task has ever run, and never during a run.
     el('promptEditor').classList.toggle('hidden', Boolean(task.result));
     el('savePrompt').disabled = state.busy;
+    // Static <details>: setting the text keeps the element alive, so the user's collapse
+    // choice survives the next log line without any state to carry over.
     const log = (logs[taskId] || []).slice(-200).join('\\n');
-    el('detail').innerHTML =
+    el('log').textContent = log;
+    el('detailBody').innerHTML =
       '<p><strong>' + esc(task.id) + ' — ' + esc(task.title) + '</strong></p>' +
       '<p><em>' + esc(task.objective) + '</em></p>' +
       '<p class="meta">dependencies: ' + esc((task.dependencies || []).join(', ') || 'none') + ' · attempt: ' + esc(task.attempt) + '</p>' +
       (task.summary ? '<div class="md summary">' + renderMarkdown(task.summary) + '</div>' : '') +
       (task.errors && task.errors.length ? '<p class="error">' + task.errors.map(esc).join('<br>') + '</p>' : '') +
       '<div class="row"><button class="secondary" data-retry="' + esc(task.id) + '"' +
-        (state.busy ? ' disabled' : '') + '>Retry Task</button></div>' +
-      '<pre class="log">' + esc(log) + '</pre>';
+        (state.busy ? ' disabled' : '') + '>Retry Task</button></div>';
+    renderContext(task);
+  }
+
+  // Context budget of the running attempt, shown from the moment the run builds its context.
+  function renderContext(task) {
+    const injected = task.contextFiles || [];
+    const used = injected.reduce(function (sum, file) { return sum + (file.chars || 0); }, 0);
+    const pct = Math.min(100, Math.round((used / CONTEXT_BUDGET) * 100));
+    el('contextBox').classList.toggle('hidden', injected.length === 0);
+    el('contextFill').style.width = pct + '%';
+    el('contextBar').classList.toggle('full', pct >= 90);
+    el('contextMeta').textContent =
+      Math.round(used / 1000) + 'k / ' + Math.round(CONTEXT_BUDGET / 1000) + 'k chars · ' + pct + '%';
   }
 
   el('newSession').addEventListener('click', function () { vscode.postMessage({ type: 'newSession' }); });
