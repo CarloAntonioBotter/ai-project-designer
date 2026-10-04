@@ -1,0 +1,206 @@
+{
+	"name": "ai-project-designer",
+	"displayName": "AI Project Designer",
+	"description": "Plan projects with an Architect LLM and execute each task through an isolated Pi Agent run driven by a Python process boundary.",
+	"version": "0.1.26",
+	"publisher": "local",
+	"license": "MIT",
+	"engines": {
+		"vscode": "^1.85.0",
+		"node": ">=18"
+	},
+	"categories": [
+		"Other"
+	],
+	"main": "./out/src/extension.js",
+	"activationEvents": [
+		"onView:aiProjectDesigner.sidebar"
+	],
+	"contributes": {
+		"viewsContainers": {
+			"activitybar": [
+				{
+					"id": "aiProjectDesigner",
+					"title": "AI Project Designer",
+					"icon": "resources/icon.svg"
+				}
+			]
+		},
+		"views": {
+			"aiProjectDesigner": [
+				{
+					"type": "webview",
+					"id": "aiProjectDesigner.sidebar",
+					"name": "Planner"
+				}
+			]
+		},
+		"commands": [
+			{
+				"command": "aiProjectDesigner.newSession",
+				"title": "AI Project Designer: New Session"
+			},
+			{
+				"command": "aiProjectDesigner.generatePlan",
+				"title": "AI Project Designer: Generate Plan"
+			},
+			{
+				"command": "aiProjectDesigner.runPlan",
+				"title": "AI Project Designer: Run Plan"
+			},
+			{
+				"command": "aiProjectDesigner.runCurrentTask",
+				"title": "AI Project Designer: Run Current Task"
+			},
+			{
+				"command": "aiProjectDesigner.stopExecution",
+				"title": "AI Project Designer: Stop Execution"
+			},
+			{
+				"command": "aiProjectDesigner.retryTask",
+				"title": "AI Project Designer: Retry Task"
+			},
+			{
+				"command": "aiProjectDesigner.openSession",
+				"title": "AI Project Designer: Open Session"
+			},
+			{
+				"command": "aiProjectDesigner.refreshContext",
+				"title": "AI Project Designer: Refresh Context"
+			},
+			{
+				"command": "aiProjectDesigner.checkPiRuntime",
+				"title": "AI Project Designer: Check Pi Runtime"
+			}
+		],
+		"configuration": {
+			"title": "AI Project Designer",
+			"properties": {
+				"aiProjectDesigner.planner.provider": {
+					"type": "string",
+					"default": "",
+					"description": "Pi provider id used by the Planner (e.g. deepseek). Empty means Pi's default provider."
+				},
+				"aiProjectDesigner.planner.model": {
+					"type": "string",
+					"default": "",
+					"description": "Pi model id used by the Planner (the most capable model available)."
+				},
+				"aiProjectDesigner.planner.thinking": {
+					"type": "string",
+					"default": "",
+					"description": "Pi thinking level for the Planner: off, minimal, low, medium, high, xhigh, max. Empty means Pi's default."
+				},
+				"aiProjectDesigner.planner.timeout": {
+					"type": "number",
+					"default": 300000,
+					"description": "Planner Pi run timeout in milliseconds (the sidebar edits it in seconds)."
+				},
+				"aiProjectDesigner.planner.systemPrompt": {
+					"type": "string",
+					"default": "",
+					"editPresentation": "multiline",
+					"markdownDescription": "Markdown system prompt sent to the Planner LLM. Leave empty to use the built-in prompt. Editable from the sidebar Settings tab with a live Markdown preview."
+				},
+				"aiProjectDesigner.pi.command": {
+					"type": "string",
+					"default": "pi",
+					"description": "Pi CLI executable. This configures the integration runtime, not an alternative LLM provider."
+				},
+				"aiProjectDesigner.pi.mode": {
+					"type": "string",
+					"default": "json",
+					"description": "Pi output mode. The runner implements the one-shot 'json' event stream used for isolated task execution."
+				},
+				"aiProjectDesigner.pi.noSession": {
+					"type": "boolean",
+					"default": true,
+					"description": "Run every task as an ephemeral, no-session Pi execution. Required for task isolation."
+				},
+				"aiProjectDesigner.pi.timeout": {
+					"type": "number",
+					"default": 120000
+				},
+				"aiProjectDesigner.pi.agentDir": {
+					"type": "string",
+					"default": "",
+					"description": "Optional Pi config directory (PI_CODING_AGENT_DIR). Leave empty to use Pi's own configuration."
+				},
+				"aiProjectDesigner.pi.provider": {
+					"type": "string",
+					"default": "",
+					"description": "Optional Pi provider override, forwarded to the Pi CLI. Pi remains the agentic runtime."
+				},
+				"aiProjectDesigner.pi.model": {
+					"type": "string",
+					"default": "",
+					"description": "Optional Pi model override, forwarded to the Pi CLI. Pi remains the agentic runtime."
+				},
+				"aiProjectDesigner.pi.thinking": {
+					"type": "string",
+					"default": "",
+					"description": "Pi thinking level for task execution: off, minimal, low, medium, high, xhigh, max. Empty means Pi's default."
+				},
+				"aiProjectDesigner.pi.tools": {
+					"type": "array",
+					"items": {
+						"type": "string"
+					},
+					"default": [
+						"read",
+						"edit",
+						"write",
+						"bash",
+						"grep",
+						"find",
+						"ls"
+					],
+					"description": "Pi tool allowlist passed as --tools."
+				},
+				"aiProjectDesigner.pi.trustProjectFiles": {
+					"type": "boolean",
+					"default": false,
+					"description": "When false, Pi runs with --no-approve and ignores project-local files/extensions. Keep false for untrusted repositories."
+				},
+				"aiProjectDesigner.pi.allowedExtensions": {
+					"type": "array",
+					"items": {
+						"type": "string"
+					},
+					"default": [],
+					"description": "Explicit Pi extension allowlist. Empty means no extensions are loaded."
+				},
+				"aiProjectDesigner.pythonPath": {
+					"type": "string",
+					"default": "python"
+				},
+				"aiProjectDesigner.maxRetries": {
+					"type": "number",
+					"default": 2
+				},
+				"aiProjectDesigner.ui.fontSize": {
+					"type": "number",
+					"default": 0,
+					"description": "Sidebar base font size in px. 0 follows the VS Code font size."
+				},
+				"aiProjectDesigner.autoExecute": {
+					"type": "boolean",
+					"default": false
+				}
+			}
+		}
+	},
+	"scripts": {
+		"build": "tsc -p .",
+		"watch": "tsc -w -p .",
+		"test:unit": "npm run build && node --test \"out/test/**/*.test.js\"",
+		"test:python": "python -m unittest discover -s python/tests -t python -v",
+		"test": "npm run test:unit && npm run test:python",
+		"check:pi": "python python/executor_runner.py --check-runtime --command pi"
+	},
+	"devDependencies": {
+		"@types/node": "^20.11.30",
+		"@types/vscode": "^1.85.0",
+		"typescript": "^5.4.5"
+	}
+}

@@ -1,0 +1,31 @@
+{
+    "aiProjectDesigner.planner.provider": "deepseek",
+    "aiProjectDesigner.planner.model": "deepseek-flash",
+    "aiProjectDesigner.planner.thinking": "medium",
+    "aiProjectDesigner.planner.timeout": 1200000,
+    "aiProjectDesigner.planner.systemPrompt": "You are the Architect / Planner for an AI-assisted software project.\nYou do NOT execute work and you do NOT modify the repository.\nYou transform a user request and workspace context into an atomic, executable task checklist.\n\nRules:\n- Return ONLY a JSON object. No prose, no markdown fences.\n- Produce atomic tasks: one task = one concrete objective.\n- Every task must be self-sufficient: a cheaper execution agent will run it with no knowledge of this plan or any previous conversation.\n- Populate executorPrompt with the complete, standalone prompt for the execution agent.\n- Include explicit acceptanceCriteria and expectedOutput for every task.\n- Reference files with workspace-relative paths.\n- Use explicit dependencies (task ids) when a task requires another task's output.\n- Never ask the execution agent to resolve ambiguity left by the planner.\n\nJSON schema:\n{\n  \"project\": { \"title\": string, \"summary\": string, \"assumptions\": string[] },\n  \"tasks\": [\n    {\n      \"id\": string,                 // e.g. \"task-001\"\n      \"title\": string,\n      \"description\": string,\n      \"order\": number,              // 1-based\n      \"dependencies\": string[],     // task ids\n      \"objective\": string,\n      \"executorPrompt\": string,     // complete standalone prompt for the executor\n      \"executorInstructions\": string[],\n      \"filesToRead\": string[],\n      \"filesToModify\": string[],\n      \"expectedOutput\": string,\n      \"acceptanceCriteria\": string[],\n      \"commands\": string[]          // optional\n    }\n  ]\n}",
+    "aiProjectDesigner.pi.command": "pi",
+    "aiProjectDesigner.pi.mode": "json",
+    "aiProjectDesigner.pi.provider": "localllm-lm-studio",
+    "aiProjectDesigner.pi.model": "qwen3.8-27b-gsq-rco",
+    "aiProjectDesigner.pi.thinking": "medium",
+    "aiProjectDesigner.pi.tools": [
+        "read",
+        "edit",
+        "write",
+        "bash",
+        "grep",
+        "find",
+        "ls"
+    ],
+    "aiProjectDesigner.pi.agentDir": "",
+    "aiProjectDesigner.pi.allowedExtensions": [
+        "npm:pi-localllm-provider"
+    ],
+    "aiProjectDesigner.pi.timeout": 12000000,
+    "aiProjectDesigner.pi.noSession": true,
+    "aiProjectDesigner.pi.trustProjectFiles": false,
+    "aiProjectDesigner.pythonPath": "python",
+    "aiProjectDesigner.maxRetries": 2,
+    "aiProjectDesigner.autoExecute": false
+}
