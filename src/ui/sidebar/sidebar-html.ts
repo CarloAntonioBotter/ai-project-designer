@@ -133,14 +133,13 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
     background: currentColor; border-radius: 1px;
   }
   /* An arc, not a full ring: a uniformly colored ring reads as static while it
-     spins. The second accent border makes the rotation unmistakable, and the
-     hex fallback matters because an undefined var would leave the whole ring
-     in the track color. */
+     spins. A bold accent arc over a faint track keeps the motion obvious in any
+     theme; the nested fallback stays valid because it ends on a concrete hex. */
   .spinner {
-    width: 14px; height: 14px; flex: none; border-radius: 50%;
-    border: 2px solid var(--vscode-descriptionForeground, rgba(128,128,128,0.5));
-    border-top-color: var(--vscode-progressBar-background, #3794ff);
-    border-right-color: var(--vscode-progressBar-background, #3794ff);
+    width: 16px; height: 16px; flex: none; box-sizing: border-box; border-radius: 50%;
+    border: 3px solid rgba(128, 128, 128, 0.25);
+    border-top-color: var(--vscode-progressBar-background, var(--vscode-charts-blue, #3794ff));
+    border-left-color: var(--vscode-progressBar-background, var(--vscode-charts-blue, #3794ff));
     animation: spin 0.8s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
