@@ -58,6 +58,12 @@ test('sidebar disables New Session and Refresh Context while a run is busy', () 
   assert.match(html, /el\('refresh'\)\.disabled = state\.busy/);
 });
 
+test('sidebar spinner is a rotating arc, not a uniform ring', () => {
+  // A full ring reads as static while it spins: one accent border must trace the motion.
+  assert.match(html, /\.spinner \{[\s\S]*?animation: spin /);
+  assert.match(html, /\.spinner \{[\s\S]*?border-top-color: var\(--vscode-progressBar-background/);
+});
+
 test('sidebar scopes the plan failure notice to a session still in progress', () => {
   assert.match(html, /const CONCLUDED_SESSION = \{ completed: 1, failed: 1, cancelled: 1 \}/);
   assert.match(
