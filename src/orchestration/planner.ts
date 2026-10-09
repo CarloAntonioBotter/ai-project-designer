@@ -21,8 +21,6 @@ export interface GeneratePlanInput {
   constraints: string[];
   systemPrompt?: string;
   provider: LLMProvider;
-  temperature?: number;
-  maxTokens?: number;
   maxRepairAttempts?: number;
   signal?: AbortSignal;
   onProgress?: (message: string) => void;
@@ -94,8 +92,6 @@ export async function generatePlan(input: GeneratePlanInput): Promise<Plan> {
     const response = await input.provider.generate({
       system: systemPrompt,
       user,
-      temperature: input.temperature,
-      maxTokens: input.maxTokens,
       signal: input.signal,
       onProgress: (event) => {
         if (event.kind === 'progress' && event.type === 'text') {
@@ -121,7 +117,10 @@ export async function generatePlan(input: GeneratePlanInput): Promise<Plan> {
 
     const validation = validatePlan(raw);
     if (!validation.ok) {
-      lastErrors = validation.errors;
+      // Every attempt is a fresh no-session Pi run, so the offending response
+      // must travel in the repair prompt: without it the model never sees what
+      // it produced and the retry is just a reroll that repeats the same shape.
+      lastErrors = [...validation.errors, `your previous response was: "${snippet(response.text)}"`];
       user = baseUser + repairSuffix(lastErrors);
       continue;
     }

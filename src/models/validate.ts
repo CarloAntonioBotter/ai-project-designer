@@ -7,6 +7,7 @@
  */
 
 import { PlannedPlan, PlannedTask, Task, TaskContext } from './types';
+import { isSafeId } from '../persistence/paths';
 
 export type ValidationResult<T> = { ok: true; value: T } | { ok: false; errors: string[] };
 
@@ -78,11 +79,12 @@ export function validatePlan(raw: unknown): ValidationResult<PlannedPlan> {
       return;
     }
     const id = readString(taskRaw, 'id', errors);
-    if (id && seenIds.has(id)) {
+    if (!isSafeId(id)) { errors.push(`unsafe task id: ${id}`); }
+    if (id && seenIds.has(id.toLowerCase())) {
       errors.push(`duplicate task id: ${id}`);
     }
     if (id) {
-      seenIds.add(id);
+      seenIds.add(id.toLowerCase());
     }
     tasks.push({
       id,
@@ -104,7 +106,7 @@ export function validatePlan(raw: unknown): ValidationResult<PlannedPlan> {
   // Dependency integrity: every dependency must reference an existing task.
   for (const task of tasks) {
     for (const dependency of task.dependencies) {
-      if (!seenIds.has(dependency)) {
+      if (!tasks.some((candidate) => candidate.id === dependency)) {
         errors.push(`task ${task.id} depends on unknown task ${dependency}`);
       }
     }

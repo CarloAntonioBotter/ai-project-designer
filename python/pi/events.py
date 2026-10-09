@@ -36,6 +36,7 @@ class ParsedState:
     commands_executed: list[str] = field(default_factory=list)
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    tool_failures: dict[str, str] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
     tests: list[dict[str, Any]] = field(default_factory=list)
     usage: dict[str, Any] = field(default_factory=dict)
@@ -72,6 +73,7 @@ class EventParser:
         self.events: list[dict[str, Any]] = []
         self._max_recorded_events = max_recorded_events
         self._seen_files: set[str] = set()
+        self._pending_tools: dict[str, dict[str, Any]] = {}
 
     # -- recording helpers -------------------------------------------------
     def _record(self, normalized: dict[str, Any]) -> list[dict[str, Any]]:
@@ -81,7 +83,7 @@ class EventParser:
 
     def _track_file(self, tool_name: str, args: Any) -> None:
         path = _extract_path(args)
-        if not path or path in self._seen_files:
+        if tool_name not in _WRITE_TOOLS | _EDIT_TOOLS or not path or path in self._seen_files:
             return
         self._seen_files.add(path)
         if tool_name in _WRITE_TOOLS:
@@ -124,9 +126,10 @@ class EventParser:
         if event_type == "tool_execution_start":
             tool_name = str(event.get("toolName", "unknown"))
             args = event.get("args")
-            self.state.tool_calls.append({"name": tool_name, "args": args})
-            self._track_file(tool_name, args)
-            if tool_name == "bash" and isinstance(args, dict) and isinstance(args.get("command"), str):
+            call = {"name": tool_name, "args": args, "status": "unknown"}
+            self.state.tool_calls.append(call)
+            self._pending_tools[str(event.get("toolCallId", tool_name))] = call
+            if tool_name in ("bash", "powershell") and isinstance(args, dict) and isinstance(args.get("command"), str):
                 self.state.commands_executed.append(args["command"])
             return self._record(
                 {"kind": "progress", "type": "tool_start", "tool": tool_name, "args": args}
@@ -135,8 +138,24 @@ class EventParser:
         if event_type == "tool_execution_end":
             tool_name = str(event.get("toolName", "unknown"))
             is_error = bool(event.get("isError"))
-            if is_error:
-                self.state.errors.append(f"tool {tool_name} failed")
+            call = self._pending_tools.pop(str(event.get("toolCallId", tool_name)), None)
+            if call is not None:
+                call["status"] = "failed" if is_error else "passed"
+                args = call["args"]
+                key = json.dumps([tool_name, args], sort_keys=True)
+                if tool_name in _WRITE_TOOLS | _EDIT_TOOLS:
+                    key = "file:" + str(_extract_path(args))
+                if is_error:
+                    message = f"tool {tool_name} failed: {args}"
+                    self.state.warnings.append(message)
+                    # Read failures can legitimately lead to creating the missing file.
+                    if tool_name not in ("read", "grep", "find", "ls"):
+                        self.state.tool_failures[key] = message
+                else:
+                    self.state.tool_failures.pop(key, None)
+                    self._track_file(tool_name, args)
+            elif is_error:
+                self.state.errors.append(f"tool {tool_name} failed without a matching start event")
             return self._record(
                 {"kind": "progress", "type": "tool_end", "tool": tool_name, "isError": is_error}
             )
@@ -201,10 +220,15 @@ class EventParser:
     def test_reports(self) -> list[dict[str, Any]]:
         """Best-effort test detection from executed commands."""
         reports: list[dict[str, Any]] = []
-        for command in self.state.commands_executed:
-            lowered = command.lower()
-            if any(token in lowered for token in ("test", "pytest", "jest", "vitest", "unittest")):
-                reports.append({"command": command, "detected": True})
+        for call in self.state.tool_calls:
+            args = call.get("args")
+            if call["name"] not in ("bash", "powershell") or not isinstance(args, dict):
+                continue
+            command = args.get("command")
+            if not isinstance(command, str):
+                continue
+            reports.append({"command": command, "detected": any(token in command.lower() for token in
+                ("test", "pytest", "jest", "vitest", "unittest")), "status": call["status"]})
         return reports
 
     def feed_all(self, lines: Iterable[str]) -> list[dict[str, Any]]:

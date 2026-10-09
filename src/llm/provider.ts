@@ -5,8 +5,6 @@ import { ProgressEvent } from '../pi/pi-protocol';
 export interface LLMRequest {
   system: string;
   user: string;
-  temperature?: number;
-  maxTokens?: number;
   signal?: AbortSignal;
   /** Live runtime progress, e.g. the planner streaming its JSON answer. */
   onProgress?: (event: ProgressEvent) => void;

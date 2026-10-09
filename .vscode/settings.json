@@ -18,9 +18,6 @@
         "ls"
     ],
     "aiProjectDesigner.pi.agentDir": "",
-    "aiProjectDesigner.pi.allowedExtensions": [
-        "npm:pi-localllm-provider"
-    ],
     "aiProjectDesigner.pi.timeout": 12000000,
     "aiProjectDesigner.pi.noSession": true,
     "aiProjectDesigner.pi.trustProjectFiles": false,

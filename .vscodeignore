@@ -11,7 +11,8 @@ tsconfig.json
 **/__pycache__/**
 **/*.pyc
 node_modules/**
-!node_modules/@types/**
+scripts/**
+.vscode-test/**
 *.vsix
 .ai-project/**
 pi_err.txt

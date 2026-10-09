@@ -2,7 +2,7 @@
 	"name": "ai-project-designer",
 	"displayName": "AI Project Designer",
 	"description": "Plan projects with a Planner LLM and execute each task through an isolated Pi Agent run driven by a Python process boundary.",
-	"version": "0.1.71",
+	"version": "0.2.0",
 	"publisher": "local",
 	"repository": {
 		"type": "git",
@@ -170,14 +170,6 @@
 					"default": false,
 					"description": "When false, Pi runs with --no-approve and ignores project-local files/extensions. Keep false for untrusted repositories."
 				},
-				"aiProjectDesigner.pi.allowedExtensions": {
-					"type": "array",
-					"items": {
-						"type": "string"
-					},
-					"default": [],
-					"description": "Explicit Pi extension allowlist. Empty means no extensions are loaded."
-				},
 				"aiProjectDesigner.pythonPath": {
 					"type": "string",
 					"default": "python"
@@ -200,6 +192,9 @@
 	},
 	"scripts": {
 		"build": "tsc -p .",
+		"vscode:prepublish": "npm run build",
+		"test:host": "npm run build && node scripts/test-host.cjs",
+		"package:vsix": "vsce package --out ai-project-designer.vsix && python scripts/check_vsix.py ai-project-designer.vsix",
 		"watch": "tsc -w -p .",
 		"test:unit": "npm run build && node --test \"out/test/**/*.test.js\"",
 		"test:python": "python -m unittest discover -s python/tests -t python -v",
@@ -209,6 +204,8 @@
 	"devDependencies": {
 		"@types/node": "^20.11.30",
 		"@types/vscode": "^1.85.0",
+		"@vscode/test-electron": "^3.1.0",
+		"@vscode/vsce": "^4.0.0",
 		"typescript": "^5.4.5"
 	}
 }

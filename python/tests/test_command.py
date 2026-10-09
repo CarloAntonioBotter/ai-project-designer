@@ -15,7 +15,7 @@ class BuildArgvTests(unittest.TestCase):
         self.assertIn("--mode", argv)
         self.assertIn("json", argv)
         self.assertIn("--no-session", argv)
-        self.assertIn("--no-extensions", argv)
+        self.assertNotIn("--no-extensions", argv)
         self.assertIn("--no-context-files", argv)
         self.assertIn("--no-approve", argv)
         self.assertIn("--tools", argv)

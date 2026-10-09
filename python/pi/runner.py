@@ -27,7 +27,6 @@ ProgressCallback = Callable[[dict[str, Any]], None]
 CANCEL_EVENT = threading.Event()
 
 _TERMINATE_GRACE_SECONDS = 3.0
-_VERSION_TIMEOUT_SECONDS = 20
 
 
 def _install_signal_handlers() -> None:
@@ -43,27 +42,52 @@ def _install_signal_handlers() -> None:
 
 
 def _terminate(proc: subprocess.Popen[str]) -> None:
-    if proc.poll() is not None:
-        return
     try:
         if os.name == "nt":
             subprocess.run(
                 ["taskkill", "/pid", str(proc.pid), "/T", "/F"],
                 capture_output=True,
                 check=False,
+                timeout=5,
             )
         else:
-            proc.terminate()
-    except OSError:
+            os.killpg(proc.pid, signal.SIGTERM)
+    except (OSError, subprocess.TimeoutExpired):
         pass
     try:
         proc.wait(timeout=_TERMINATE_GRACE_SECONDS)
     except subprocess.TimeoutExpired:
         try:
-            proc.kill()
+            if os.name == "nt":
+                proc.kill()
+            else:
+                os.killpg(proc.pid, signal.SIGKILL)
             proc.wait(timeout=_TERMINATE_GRACE_SECONDS)
         except (OSError, subprocess.TimeoutExpired):
             pass
+    if os.name != "nt":
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+
+def _probe(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+    """Bound probes too: extensions/providers can block during CLI startup."""
+    proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, encoding="utf-8", errors="replace", start_new_session=(os.name != "nt"), **kwargs)
+    deadline = time.monotonic() + 10
+    while True:
+        try:
+            stdout, stderr = proc.communicate(timeout=0.2)
+            return subprocess.CompletedProcess(argv, proc.returncode, stdout, stderr)
+        except subprocess.TimeoutExpired:
+            if CANCEL_EVENT.is_set() or time.monotonic() >= deadline:
+                _terminate(proc)
+                for stream in (proc.stdout, proc.stderr):
+                    if stream is not None:
+                        stream.close()
+                raise
 
 
 def parse_model_table(output: str) -> list[dict[str, Any]]:
@@ -93,16 +117,7 @@ def list_models(command: str, cwd: str | None = None) -> list[dict[str, Any]]:
     """Ask the Pi CLI which models are actually available (respects auth)."""
     command = resolve_command(command)
     try:
-        completed = subprocess.run(
-            [command, "--list-models"],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=_VERSION_TIMEOUT_SECONDS,
-            check=False,
-        )
+        completed = _probe([command, "--list-models"], cwd=cwd)
     except (OSError, subprocess.SubprocessError):
         return []
     if completed.returncode != 0:
@@ -110,20 +125,13 @@ def list_models(command: str, cwd: str | None = None) -> list[dict[str, Any]]:
     return parse_model_table(completed.stdout or "")
 
 
-def probe_version(command: str, cwd: str | None = None) -> str | None:
+def probe_version(command: str, cwd: str | None = None, env: dict[str, str] | None = None) -> str | None:
     command = resolve_command(command)
     try:
-        completed = subprocess.run(
-            [command, "--version"],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=_VERSION_TIMEOUT_SECONDS,
-            check=False,
-        )
+        completed = _probe([command, "--version"], cwd=cwd, env=env)
     except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0:
         return None
     output = (completed.stdout or completed.stderr or "").strip()
     return output.splitlines()[0] if output else None
@@ -134,6 +142,7 @@ def check_runtime(command: str) -> dict[str, Any]:
     command = resolve_command(command)
     info: dict[str, Any] = {
         "available": False,
+        "compatible": False,
         "command": command,
         "version": None,
         "jsonMode": False,
@@ -142,15 +151,7 @@ def check_runtime(command: str) -> dict[str, Any]:
         "error": None,
     }
     try:
-        completed = subprocess.run(
-            [command, "--help"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=_VERSION_TIMEOUT_SECONDS,
-            check=False,
-        )
+        completed = _probe([command, "--help"])
     except FileNotFoundError:
         info["error"] = f"pi executable not found: {command}"
         return info
@@ -168,6 +169,9 @@ def check_runtime(command: str) -> dict[str, Any]:
     info["jsonMode"] = "--mode" in help_text and "json" in help_text
     info["noSession"] = "--no-session" in help_text
     info["toolAllowlist"] = "--tools" in help_text
+    info["compatible"] = all(info[key] for key in ("version", "jsonMode", "noSession", "toolAllowlist"))
+    if not info["compatible"]:
+        info["error"] = "Pi is installed but required CLI capabilities are missing"
     return info
 
 
@@ -201,7 +205,9 @@ class PiRunner:
                 request, config, parser, f"workspaceRoot is not a directory: {workspace}", started_at
             )
 
-        version = probe_version(config.command, cwd=workspace)
+        deadline = time.monotonic() + config.timeout_ms / 1000.0
+        env = self._build_env(config, request)
+        version = probe_version(config.command, cwd=workspace, env=env)
         if version is None:
             return self._error_result(
                 request,
@@ -211,7 +217,6 @@ class PiRunner:
                 started_at,
             )
 
-        env = self._build_env(config, request)
         prompt = request.prompt if request.raw_prompt else build_prompt(request)
 
         try:
@@ -241,14 +246,26 @@ class PiRunner:
         stdout_thread.start()
         stderr_thread.start()
 
-        try:
-            if proc.stdin is not None:
-                proc.stdin.write(prompt)
-                proc.stdin.close()
-        except OSError as exc:
-            stderr_tail.append(f"failed to write prompt to pi stdin: {exc}")
+        def write_prompt() -> None:
+            try:
+                if proc.stdin is not None:
+                    proc.stdin.write(prompt)
+            except OSError as exc:
+                stderr_tail.append(f"failed to write prompt to pi stdin: {exc}")
+            finally:
+                if proc.stdin is not None:
+                    try:
+                        proc.stdin.close()
+                    except OSError:
+                        pass
 
-        cancelled, timed_out = self._wait(proc, config.timeout_ms)
+        writer = threading.Thread(target=write_prompt, name="pi-stdin", daemon=True)
+        writer.start()
+        cancelled, timed_out = self._wait(proc, max(0, int((deadline - time.monotonic()) * 1000)))
+        writer.join(timeout=1)
+        # A completed parent may still have spawned children holding its pipes open.
+        if os.name != "nt":
+            _terminate(proc)
         stdout_thread.join(timeout=5)
         stderr_thread.join(timeout=5)
         for stream in (proc.stdout, proc.stderr):
@@ -274,6 +291,7 @@ class PiRunner:
         return result
 
     def _wait(self, proc: subprocess.Popen[str], timeout_ms: int) -> tuple[bool, bool]:
+        """Wait for pi, stopping on cancel or on the configured deadline."""
         deadline = time.monotonic() + (timeout_ms / 1000.0)
         cancelled = False
         timed_out = False
@@ -292,7 +310,8 @@ class PiRunner:
     def _pump_stdout(self, proc: subprocess.Popen[str], parser: EventParser) -> None:
         assert proc.stdout is not None
         for line in proc.stdout:
-            for event in parser.feed(line):
+            events = parser.feed(line)
+            for event in events:
                 self._emit(event)
 
     def _pump_stderr(self, proc: subprocess.Popen[str], tail: list[str]) -> None:
@@ -307,6 +326,8 @@ class PiRunner:
         if config.agent_dir:
             env["PI_CODING_AGENT_DIR"] = config.agent_dir
         env.update(request.context.environment)
+        if config.agent_dir:
+            env["PI_CODING_AGENT_DIR"] = config.agent_dir
         return env
 
     def _error_result(

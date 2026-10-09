@@ -5,6 +5,10 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { PiRunner } from '../src/pi/pi-runner';
 import { PiExecutionRequest } from '../src/pi/pi-protocol';
+import { executeTask } from '../src/orchestration/executor';
+import { ArtifactStore } from '../src/persistence/artifact-store';
+import { SessionStore } from '../src/persistence/session-store';
+import { planToTasks, validatePlan } from '../src/models/validate';
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const RUNNER_SCRIPT = path.join(REPO_ROOT, 'python', 'executor_runner.py');
@@ -98,8 +102,57 @@ test('Pi runtime check reports availability and required modes', async () => {
   const runner = new PiRunner();
   const report = await runner.checkRuntime(PYTHON, RUNNER_SCRIPT, fakePi);
   assert.equal(report.available, true);
+  assert.equal(report.compatible, true);
   assert.equal(report.jsonMode, true);
   assert.equal(report.noSession, true);
   assert.equal(report.toolAllowlist, true);
+  const models = await runner.listModels(PYTHON, RUNNER_SCRIPT, fakePi, 'configured-agent', root);
+  assert.equal(models[0].model, 'configured-agent');
   fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('host cancellation returns cancelled, never a successful envelope', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aipd-cancel-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const request = makeRequest(root, makeFakePi(root), 'task-A', 'test');
+  request.context.environment = { FAKE_PI_SLEEP: '60' };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 500);
+  try {
+    const result = await new PiRunner().run(request, { pythonPath: PYTHON, runnerScript: RUNNER_SCRIPT,
+      cwd: root, signal: controller.signal });
+    assert.equal(result.status, 'cancelled');
+  } finally { clearTimeout(timer); }
+});
+
+test('executor verifies commands and persists immutable snapshots across retries', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aipd-executor-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const store = new SessionStore(root);
+  const session = store.createSession({ workspaceRoot: root, request: 'test',
+    planner: { provider: 'fake', model: 'fake' }, pi: { command: makeFakePi(root), mode: 'json', noSession: true } });
+  const plan = validatePlan({ project: { title: 'test' }, tasks: [{ id: 'task-A', title: 'test',
+    objective: 'test', executorPrompt: 'test', filesToModify: ['a.txt'], commands: ['python -m unittest'] }] });
+  assert.ok(plan.ok);
+  const task = planToTasks(plan.value, root)[0];
+  task.context.environment = { FAKE_PI_WRITE_FILE: 'a.txt' };
+  const artifactStore = new ArtifactStore(store.sessionDir(session.id));
+  const input = { session, task, context: task.context, artifactStore, runnerScript: RUNNER_SCRIPT,
+    config: { pythonPath: PYTHON, pi: { ...session.pi, timeoutMs: 5000, tools: ['write', 'bash'], trustProjectFiles: false },
+      planner: { provider: 'fake', model: 'fake', thinking: '', timeoutMs: 5000, systemPrompt: '' },
+      maxRetries: 2, fontSize: 0, autoExecute: false } };
+  const first = await executeTask(input);
+  assert.equal(first.status, 'completed');
+  assert.equal(first.verification, 'checked');
+  assert.equal(first.attempt, 1);
+  assert.ok(first.artifacts[0].storagePath);
+  task.retryCount = 0;
+  const second = await executeTask(input);
+  assert.equal(second.attempt, 2);
+  assert.notEqual(first.artifacts[0].storagePath, second.artifacts[0].storagePath);
+  assert.equal(artifactStore.readArtifact(first.artifacts[0].storagePath!)?.trim(), 'written by fake pi');
+  task.commands = ['a command Pi did not run'];
+  const third = await executeTask(input);
+  assert.equal(third.status, 'failed');
+  assert.match(third.errors.join(), /Required commands did not pass/);
 });

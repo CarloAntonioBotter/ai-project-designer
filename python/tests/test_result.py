@@ -37,6 +37,7 @@ class NormalizeTests(unittest.TestCase):
         parser.feed('{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"ok"}],"stopReason":"stop"}}')
         parser.feed('{"type":"tool_execution_start","toolCallId":"1","toolName":"write","args":{"path":"a.md"}}')
 
+        parser.feed('{"type":"tool_execution_end","toolCallId":"1","toolName":"write","isError":false}')
         result = normalize(request, request.pi, parser, exit_code=0, version="0.87.1").to_dict()
 
         self.assertEqual(result["task_id"], "task-003")

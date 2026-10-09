@@ -12,6 +12,8 @@ Environment controls:
   FAKE_PI_SLEEP       seconds to sleep before finishing (for timeout/cancel)
   FAKE_PI_WRITE_FILE  create this file (relative to cwd) via a write tool event
   FAKE_PI_TEXT        override the assistant text (delta and final message)
+  FAKE_PI_STREAM      "thinking", "thinking_loop" or "text": stream that delta type
+  FAKE_PI_STREAM_SECONDS  how long to keep streaming (default 0 = off)
 """
 
 from __future__ import annotations
@@ -39,6 +41,12 @@ def main() -> int:
         print("--mode <json|rpc>\n--no-session\n--tools <list>\n--provider <name>\n--model <id>")
         return 0
 
+    if "--list-models" in argv:
+        print("provider model context max-out thinking images")
+        print(f"fake {os.environ.get('PI_CODING_AGENT_DIR', 'default')} 32K 8K yes no")
+        return 0
+
+    time.sleep(float(os.environ.get("FAKE_PI_BEFORE_READ_SLEEP", "0")))
     prompt = sys.stdin.read()
     run_id = str(uuid.uuid4())
     text = os.environ.get("FAKE_PI_TEXT") or f"ran {run_id}"
@@ -94,6 +102,28 @@ def main() -> int:
 
     emit({"type": "tool_execution_start", "toolCallId": "call_2", "toolName": "bash", "args": {"command": "python -m unittest"}})
     emit({"type": "tool_execution_end", "toolCallId": "call_2", "toolName": "bash", "result": {"content": []}, "isError": False})
+
+    stream = os.environ.get("FAKE_PI_STREAM")
+    stream_seconds = float(os.environ.get("FAKE_PI_STREAM_SECONDS", "0") or "0")
+    if stream and stream_seconds > 0:
+        delta_type = "thinking_delta" if stream in ("thinking", "thinking_loop") else "text_delta"
+        stream_deadline = time.monotonic() + stream_seconds
+        counter = 0
+        while time.monotonic() < stream_deadline:
+            if stream == "thinking_loop":
+                delta = "Company X is in Verona province, not in Vicenza. Stop it. "
+            elif stream == "thinking":
+                delta = f"reasoning step {counter} about a distinct subject; "
+            else:
+                delta = "stream "
+            emit(
+                {
+                    "type": "message_update",
+                    "assistantMessageEvent": {"type": delta_type, "contentIndex": 0, "delta": delta},
+                }
+            )
+            counter += 1
+            time.sleep(0.2)
 
     sleep_seconds = float(os.environ.get("FAKE_PI_SLEEP", "0"))
     if sleep_seconds > 0:

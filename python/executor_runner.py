@@ -17,7 +17,7 @@ import sys
 import traceback
 from typing import Any
 
-from pi.runner import PiRunner, check_runtime, list_models
+from pi.runner import PiRunner, check_runtime, list_models, _install_signal_handlers
 from schemas import STATUS_ERROR, TaskExecutionResult, ValidationError, parse_request
 
 
@@ -55,6 +55,7 @@ def _fail(task_id: str, message: str) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     _force_utf8_stdio()
+    _install_signal_handlers()
     parser = argparse.ArgumentParser(description="AI Project Designer Pi task runner")
     parser.add_argument("--check-runtime", action="store_true", help="probe the Pi CLI and exit")
     parser.add_argument("--list-models", action="store_true", help="list the models available in Pi and exit")

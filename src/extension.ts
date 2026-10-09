@@ -3,6 +3,7 @@ import { SidebarProvider } from './ui/sidebar/sidebar-provider';
 
 export function activate(context: vscode.ExtensionContext): void {
   const provider = new SidebarProvider(context);
+  context.subscriptions.push(provider);
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(SidebarProvider.viewId, provider, {
@@ -11,7 +12,10 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   const register = (id: string, handler: (...args: unknown[]) => unknown): void => {
-    context.subscriptions.push(vscode.commands.registerCommand(id, handler));
+    context.subscriptions.push(vscode.commands.registerCommand(id, async (...args: unknown[]) => {
+      try { return await handler(...args); }
+      catch (error) { void vscode.window.showErrorMessage(String(error)); }
+    }));
   };
 
   register('aiProjectDesigner.newSession', () => provider.newSession());

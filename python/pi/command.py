@@ -16,7 +16,6 @@ from schemas.task import ArtifactReference, PiConfig, TaskExecutionRequest
 FORBIDDEN_SESSION_FLAGS = ("--continue", "-c", "--resume", "-r", "--fork")
 
 ISOLATION_FLAGS = (
-    "--no-extensions",
     "--no-skills",
     "--no-prompt-templates",
     "--no-context-files",
@@ -42,8 +41,7 @@ def build_argv(config: PiConfig) -> list[str]:
     if config.no_session:
         argv.append("--no-session")
 
-    # Never auto-load project or user resources: repository content and Pi
-    # project resources are untrusted input, not execution authority.
+    # Disable implicit prompt resources, but keep configured Pi extensions/providers available.
     argv.extend(ISOLATION_FLAGS)
 
     argv.append("--approve" if config.trust_project_files else "--no-approve")
@@ -55,9 +53,6 @@ def build_argv(config: PiConfig) -> list[str]:
 
     if config.thinking:
         argv.extend(["--thinking", config.thinking])
-
-    for extension in config.allowed_extensions:
-        argv.extend(["-e", extension])
 
     if config.provider:
         argv.extend(["--provider", config.provider])

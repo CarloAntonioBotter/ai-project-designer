@@ -1,6 +1,7 @@
 /** Static HTML/CSS/JS for the sidebar webview: Plan tab + Settings tab. */
 
 import * as vscode from 'vscode';
+import { randomBytes } from 'node:crypto';
 import { MAX_TOTAL_CONTEXT_CHARS } from '../../orchestration/context-builder';
 import { renderMarkdown } from './markdown';
 
@@ -12,12 +13,7 @@ const TRASH_ICON =
   '</svg>';
 
 function nonce(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let value = '';
-  for (let i = 0; i < 32; i += 1) {
-    value += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return value;
+  return randomBytes(24).toString('base64');
 }
 
 export function renderSidebarHtml(webview: vscode.Webview): string {
@@ -69,6 +65,8 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
     border-radius: var(--radius); padding: 5px 6px; font-family: inherit; font-size: inherit;
   }
   textarea { min-height: 90px; resize: none; overflow: hidden; }
+  /* Opt-in scrolling box: fixed ceiling and its own scrollbar, no resize grip. */
+  textarea.scroll { max-height: 320px; overflow: auto; resize: none; }
   textarea:focus, input:focus, select:focus {
     outline: none;
     border-color: var(--vscode-input-focusBorder, var(--vscode-focusBorder));
@@ -233,6 +231,7 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
       <ul id="tasks" class="tasks"></ul>
       <div class="row">
         <button id="runAll">Run All</button>
+        <button id="rerunAll" class="secondary hidden" title="Re-run every task of this plan from scratch">Run All (from scratch)</button>
       </div>
     </div>
 
@@ -244,6 +243,11 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
           <p class="label">Context used</p>
           <div id="contextBar" class="bar"><span id="contextFill"></span></div>
           <div id="contextMeta" class="meta"></div>
+        </div>
+        <div class="field">
+          <label for="taskThinking">Thinking (this task)</label>
+          <select id="taskThinking"></select>
+          <div class="help">Overrides the executor thinking for this task only.</div>
         </div>
         <details id="promptEditor" class="collapse hidden">
           <summary>Executor prompt (editable before the first run)</summary>
@@ -257,6 +261,7 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
         </details>
         <details id="logBox" class="collapse">
           <summary>Execution</summary>
+          <div id="taskSummary" class="md summary hidden"></div>
           <pre id="log" class="log"></pre>
         </details>
       </div>
@@ -299,7 +304,7 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
       <legend>Planner system prompt (Markdown)</legend>
       <div class="field">
         <label for="planner.systemPrompt">System prompt</label>
-        <textarea id="planner.systemPrompt" class="md" spellcheck="false" placeholder="Leave empty to use the built-in prompt"></textarea>
+        <textarea id="planner.systemPrompt" class="md scroll" spellcheck="false" placeholder="Leave empty to use the built-in prompt"></textarea>
         <div class="help">Markdown is preserved and sent verbatim to the planner model. Empty = built-in prompt.</div>
       </div>
       <div class="row">
@@ -369,19 +374,22 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
 <script nonce="${n}">
   const vscode = acquireVsCodeApi();
   const renderMarkdown = ${markdownSource};
-  // The context budget the orchestrator enforces when it builds the task context.
-  const CONTEXT_BUDGET = ${MAX_TOTAL_CONTEXT_CHARS};
+  // Fallback context window (tokens) when Pi reports no size for the executor model.
+  // ~4 chars/token is the usual estimate; the orchestrator budget is in chars.
+  const CHARS_PER_TOKEN = 4;
+  const CONTEXT_BUDGET_TOKENS = ${Math.round(MAX_TOTAL_CONTEXT_CHARS / 4)};
   let state = { tasks: [], sessions: [], busy: false, settings: null };
   let activeTab = 'plan';
   let settingsDirty = false;
+  let requestDirty = false;
   let lastSessionId;
   let liveStatus = '';
   let promptTaskId;
   let planNoticeText = '';
-  const logs = {};
+  const logs = Object.create(null);
+  const streaming = Object.create(null);
 
   const STATUS_ICON = { pending: '○', running: '●', completed: '✓', failed: '✗', blocked: '⊘', skipped: '–' };
-  const CONCLUDED_SESSION = { completed: 1, failed: 1, cancelled: 1 };
 
   function esc(value) {
     return String(value == null ? '' : value)
@@ -393,7 +401,8 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
   // Auto-grow: the field always shows its whole content, so it never scrolls.
   // Hidden elements have no layout to measure, so they are grown on the next pass.
   function grow(area) {
-    if (!area.offsetParent) { return; }
+    // A .scroll textarea keeps its own scrollbar: never auto-grow it.
+    if (!area.offsetParent || area.classList.contains('scroll')) { return; }
     area.style.height = 'auto';
     area.style.height = (area.scrollHeight + area.offsetHeight - area.clientHeight) + 'px';
   }
@@ -570,7 +579,7 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
 
   function render() {
     const session = state.session;
-    el('request').value = session ? session.request : '';
+    if (!requestDirty) { el('request').value = session ? session.request : ''; }
     el('runtime').textContent = state.runtime
       ? (state.runtime.available
           ? 'Pi ' + (state.runtime.version || 'unknown') + ' · json=' + state.runtime.jsonMode + ' · no-session=' + state.runtime.noSession
@@ -581,7 +590,7 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
     sessionsSection.classList.toggle('hidden', state.sessions.length === 0);
     el('sessions').innerHTML = state.sessions.map(function (s) {
       return '<li data-session="' + esc(s.id) + '">' +
-        '<span class="session-name">' + esc(s.name) + ' <span class="meta">· ' + esc(s.status) + '</span></span>' +
+        '<button type="button" class="secondary session-name" data-session="' + esc(s.id) + '">' + esc(s.name) + ' <span class="meta">· ' + esc(s.status) + '</span></button>' +
         '<button type="button" class="session-del" data-delete="' + esc(s.id) + '" title="Delete session" aria-label="Delete session">' +
           ${JSON.stringify(TRASH_ICON)} +
         '</button>' +
@@ -595,7 +604,7 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
     el('planSection').classList.toggle('hidden', !session || !session.plan);
     el('tasks').innerHTML = state.tasks.map(function (task) {
       const icon = STATUS_ICON[task.status] || '○';
-      return '<li class="task" data-task="' + esc(task.id) + '">' +
+      return '<li class="task" role="button" tabindex="0" data-task="' + esc(task.id) + '">' +
         '<div class="title"><span class="s-' + esc(task.status) + '">' + icon + '</span>' +
         '<span class="id">' + esc(task.id) + '</span><span class="desc">' + esc(task.title) + '</span>' +
         '<span class="badge s-' + esc(task.status) + '">' + esc(task.status) + '</span></div></li>';
@@ -610,6 +619,10 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
 
     el('generate').disabled = state.busy;
     el('runAll').disabled = state.busy || !session || !session.plan;
+    // Only offered once something already ran: a fresh plan has nothing to redo.
+    const hasExecuted = state.tasks.some(function (t) { return t.executed; });
+    el('rerunAll').classList.toggle('hidden', !hasExecuted);
+    el('rerunAll').disabled = state.busy;
     el('stop').disabled = !state.busy;
     el('newSession').disabled = state.busy;
     el('refresh').disabled = state.busy;
@@ -630,49 +643,77 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
       // Only reload on task change: keeps in-progress edits while the run streams logs.
       promptTaskId = task.id;
       el('taskPrompt').value = task.executorPrompt || '';
+      fillThinking('taskThinking', task.thinking || '');
     }
     // Editing is allowed only before the task has ever run, and never during a run.
-    el('promptEditor').classList.toggle('hidden', Boolean(task.result));
+    el('promptEditor').classList.toggle('hidden', Boolean(task.executed));
     el('savePrompt').disabled = state.busy;
     // Static <details>: setting the text keeps the element alive, so the user's collapse
     // choice survives the next log line without any state to carry over.
-    const log = (logs[taskId] || []).slice(-200).join('\\n');
-    el('log').textContent = log;
+    renderLog(taskId);
+    // The Execution result belongs to the Execution block, not to the top of the detail.
+    // Static element, like the log: it survives every re-render without losing the toggle state.
+    const summary = task.summary ? renderMarkdown(task.summary) : '';
+    el('taskSummary').innerHTML = summary;
+    el('taskSummary').classList.toggle('hidden', !summary);
     el('detailBody').innerHTML =
       '<p><strong>' + esc(task.id) + ' — ' + esc(task.title) + '</strong></p>' +
       '<p><em>' + esc(task.objective) + '</em></p>' +
       '<p class="meta">dependencies: ' + esc((task.dependencies || []).join(', ') || 'none') + ' · attempt: ' + esc(task.attempt) + '</p>' +
-      (task.summary ? '<div class="md summary">' + renderMarkdown(task.summary) + '</div>' : '') +
       (task.errors && task.errors.length ? '<p class="error">' + task.errors.map(esc).join('<br>') + '</p>' : '') +
-      '<div class="row"><button class="secondary" data-retry="' + esc(task.id) + '"' +
+      (task.executed ? '<p class="meta">Evidence: ' + esc(task.verification || 'unverified') + ' (acceptance criteria require review)</p>' : '') +
+      (task.warnings && task.warnings.length ? '<p class="meta">' + task.warnings.map(esc).join('<br>') + '</p>' : '') +
+      '<div class="row">' +
+        (task.executed
+          ? '<button class="secondary" data-mark="' + esc(task.id) + '"' +
+            (state.busy ? ' disabled' : '') + '>Mark as To Do</button>'
+          : '') +
+        '<button class="secondary" data-retry="' + esc(task.id) + '"' +
         (state.busy ? ' disabled' : '') + '>Retry Task</button></div>';
     renderContext(task);
   }
 
-  // Context budget of the running attempt, shown from the moment the run builds its context.
+  function renderLog(taskId) {
+    el('log').textContent = (logs[taskId] || []).join('\\n');
+  }
+
+  // Initial prompt estimate only: Pi's later tool output is not included.
   function renderContext(task) {
-    const injected = task.contextFiles || [];
-    const used = injected.reduce(function (sum, file) { return sum + (file.chars || 0); }, 0);
-    const pct = Math.min(100, Math.round((used / CONTEXT_BUDGET) * 100));
-    el('contextBox').classList.toggle('hidden', injected.length === 0);
+    const usedChars = task.contextChars || 0;
+    const usedTokens = Math.round(usedChars / CHARS_PER_TOKEN);
+    const windowTokens = state.contextWindowTokens || CONTEXT_BUDGET_TOKENS;
+    const pct = Math.min(100, Math.round((usedTokens / windowTokens) * 100));
+    el('contextBox').classList.toggle('hidden', usedChars === 0);
     el('contextFill').style.width = pct + '%';
     el('contextBar').classList.toggle('full', pct >= 90);
     el('contextMeta').textContent =
-      Math.round(used / 1000) + 'k / ' + Math.round(CONTEXT_BUDGET / 1000) + 'k chars · ' + pct + '%';
+      'Initial prompt estimate: ~' + Math.round(usedTokens / 1000) + 'k / ' + Math.round(windowTokens / 1000) + 'k tokens · ' + pct + '%' +
+      ((task.contextOmitted || []).length ? ' · omitted/truncated: ' + task.contextOmitted.join(', ') : '');
   }
 
   el('newSession').addEventListener('click', function () { vscode.postMessage({ type: 'newSession' }); });
   el('refresh').addEventListener('click', function () { vscode.postMessage({ type: 'refreshContext' }); });
-  el('generate').addEventListener('click', function () { vscode.postMessage({ type: 'generatePlan', request: el('request').value }); });
+  el('request').addEventListener('input', function () { requestDirty = true; });
+  el('generate').addEventListener('click', function () { requestDirty = false; vscode.postMessage({ type: 'generatePlan', request: el('request').value }); });
   el('runAll').addEventListener('click', function () { vscode.postMessage({ type: 'runPlan' }); });
+  el('rerunAll').addEventListener('click', function () { vscode.postMessage({ type: 'rerunPlan' }); });
+  el('taskThinking').addEventListener('change', function () {
+    if (!state.detailTaskId) { return; }
+    vscode.postMessage({ type: 'saveTaskThinking', id: state.detailTaskId, thinking: el('taskThinking').value });
+  });
   el('stop').addEventListener('click', function () { vscode.postMessage({ type: 'stop' }); });
   el('savePrompt').addEventListener('click', function () {
     if (!state.detailTaskId) { return; }
     vscode.postMessage({ type: 'saveTaskPrompt', id: state.detailTaskId, prompt: el('taskPrompt').value });
   });
 
+  document.body.addEventListener('keydown', function (event) {
+    if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('[data-task]')) {
+      event.preventDefault(); event.target.click();
+    }
+  });
   document.body.addEventListener('click', function (event) {
-    const target = event.target.closest('[data-delete],[data-task],[data-retry],[data-session]');
+    const target = event.target.closest('[data-delete],[data-task],[data-retry],[data-mark],[data-session]');
     if (!target) { return; }
     if (target.dataset.delete) {
       event.stopPropagation();
@@ -680,6 +721,7 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
       return;
     }
     if (target.dataset.retry) { vscode.postMessage({ type: 'retryTask', id: target.dataset.retry }); }
+    else if (target.dataset.mark) { vscode.postMessage({ type: 'markTaskPending', id: target.dataset.mark }); }
     else if (target.dataset.task) { state.detailTaskId = target.dataset.task; renderDetail(target.dataset.task); }
     else if (target.dataset.session) { vscode.postMessage({ type: 'openSession', id: target.dataset.session }); }
   });
@@ -693,8 +735,9 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
       if (nextSessionId !== lastSessionId) {
         // Different (or no) session: drop every log of the previous one.
         lastSessionId = nextSessionId;
+        requestDirty = false;
         promptTaskId = undefined;
-        for (const key in logs) { delete logs[key]; }
+        for (const key in logs) { delete logs[key]; delete streaming[key]; }
         setPlanNotice('');
       } else if (message.state.session && message.state.session.status === 'planning') {
         setPlanNotice('');
@@ -706,14 +749,22 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
     } else if (message.type === 'planProgress') {
       liveStatus = message.text || '';
       el('busyText').textContent = liveStatus;
-    } else if (message.type === 'taskLog') {
-      if (!logs[message.taskId]) { logs[message.taskId] = []; }
-      if (message.replaceLast && logs[message.taskId].length > 0) {
-        logs[message.taskId][logs[message.taskId].length - 1] = message.line;
+    } else if (message.type === 'taskLogReset') {
+      logs[message.taskId] = [];
+      streaming[message.taskId] = false;
+      if (state.detailTaskId === message.taskId) { renderLog(message.taskId); }
+    } else if (message.type === 'taskLog' || message.type === 'taskText') {
+      const lines = logs[message.taskId] || (logs[message.taskId] = []);
+      if (message.type === 'taskText') {
+        if (!streaming[message.taskId] || !lines.length) { lines.push('assistant: '); }
+        lines[lines.length - 1] = (lines[lines.length - 1] + message.delta).slice(-64000);
+        streaming[message.taskId] = true;
       } else {
-        logs[message.taskId].push(message.line);
+        lines.push(String(message.line).slice(-64000));
+        streaming[message.taskId] = false;
       }
-      if (state.detailTaskId === message.taskId) { renderDetail(message.taskId); }
+      while (lines.length > 200 || (lines.length > 1 && lines.join('\\n').length > 64000)) { lines.shift(); }
+      if (state.detailTaskId === message.taskId) { renderLog(message.taskId); }
     } else if (message.type === 'settingsSaved') {
       settingsDirty = false;
       setNotice('Settings saved.', true);
@@ -727,12 +778,10 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
     }
   });
 
-  // A failure message belongs to the session that produced it: it is only shown while a session
-  // that is still in progress is selected, and dropped as soon as the selection changes.
+  // Keep final errors visible until the session changes or a new plan starts.
   function renderPlanNotice() {
     const box = el('planNotice');
-    const session = state.session;
-    const show = Boolean(planNoticeText) && !(session && CONCLUDED_SESSION[session.status]);
+    const show = Boolean(planNoticeText);
     box.textContent = show ? planNoticeText : '';
     box.classList.toggle('hidden', !show);
   }
@@ -749,7 +798,7 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
   }
   function showRuntime(report) {
     if (!report) { return; }
-    el('settingsResult').textContent = report.available
+    el('settingsResult').textContent = report.available && report.compatible
       ? 'Pi ' + report.version + ' OK (json=' + report.jsonMode + ', no-session=' + report.noSession + ', tools=' + report.toolAllowlist + ')'
       : 'Pi unavailable: ' + (report.error || 'unknown');
   }

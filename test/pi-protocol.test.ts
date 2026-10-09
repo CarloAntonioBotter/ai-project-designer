@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeRunnerResult, parseProgressLine } from '../src/pi/pi-protocol';
+import { normalizeRunnerResult, parseProgressLine, parseTokenCount } from '../src/pi/pi-protocol';
 
 test('parseProgressLine parses progress events', () => {
   const event = parseProgressLine('{"kind":"progress","type":"tool_start","tool":"bash"}');
@@ -35,6 +35,15 @@ test('normalizeRunnerResult maps the snake_case envelope', () => {
   assert.equal(result.pi.sessionMode, 'no-session');
   assert.deepEqual(result.filesChanged, ['a.md']);
   assert.equal(result.artifacts[0].path, 'a.md');
+});
+
+test('parseTokenCount reads Pi model-table sizes', () => {
+  assert.equal(parseTokenCount('262.1K'), 262100);
+  assert.equal(parseTokenCount('1M'), 1000000);
+  assert.equal(parseTokenCount('200000'), 200000);
+  assert.equal(parseTokenCount(''), undefined);
+  assert.equal(parseTokenCount(undefined), undefined);
+  assert.equal(parseTokenCount('n/a'), undefined);
 });
 
 test('normalizeRunnerResult maps unknown statuses to error', () => {

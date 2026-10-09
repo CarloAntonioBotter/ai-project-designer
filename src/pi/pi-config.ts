@@ -68,7 +68,6 @@ export function readConfig(): ExtensionConfig {
       trustProjectFiles,
       agentDir: settings().get<string>('pi.agentDir', '') || undefined,
       timeoutMs: settings().get<number>('pi.timeout', 120000),
-      allowedExtensions: settings().get<string[]>('pi.allowedExtensions', []),
       extraArgs: [],
     },
     pythonPath: settings().get<string>('pythonPath', 'python'),
@@ -106,12 +105,14 @@ export async function applySettings(patch: Record<string, unknown>, scope: Confi
 export async function checkPiRuntime(_context: vscode.ExtensionContext): Promise<PiRuntimeReport> {
   const config = readConfig();
   const runner = new PiRunner();
-  return runner.checkRuntime(config.pythonPath, runnerScriptPath(_context), config.pi.command);
+  return runner.checkRuntime(config.pythonPath, runnerScriptPath(_context), config.pi.command,
+    config.pi.agentDir, vscode.workspace.workspaceFolders?.[0]?.uri.fsPath);
 }
 
 /** Discover the models the Pi agent can actually use, via the Python boundary. */
 export async function listPiModels(_context: vscode.ExtensionContext): Promise<PiModelInfo[]> {
   const config = readConfig();
   const runner = new PiRunner();
-  return runner.listModels(config.pythonPath, runnerScriptPath(_context), config.pi.command);
+  return runner.listModels(config.pythonPath, runnerScriptPath(_context), config.pi.command,
+    config.pi.agentDir, vscode.workspace.workspaceFolders?.[0]?.uri.fsPath);
 }

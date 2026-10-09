@@ -36,7 +36,7 @@ class SecurityTests(unittest.TestCase):
         argv = build_argv(request.pi)
         self.assertIn("--no-approve", argv)
         self.assertIn("--no-context-files", argv)
-        self.assertIn("--no-extensions", argv)
+        self.assertNotIn("--no-extensions", argv)
 
     def test_malicious_workspace_file_cannot_precede_or_replace_contract(self) -> None:
         payload = make_request(

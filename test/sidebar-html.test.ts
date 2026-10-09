@@ -39,7 +39,7 @@ test('sidebar exposes an editable executor prompt for the selected task', () => 
   assert.match(html, /white-space: pre-wrap/);
   assert.match(
     html,
-    /el\('promptEditor'\)\.classList\.toggle\('hidden', Boolean\(task\.result\)\)/
+    /el\('promptEditor'\)\.classList\.toggle\('hidden', Boolean\(task\.executed\)\)/
   );
 });
 
@@ -57,9 +57,15 @@ test('sidebar collapses the execution log and keeps the toggle across log lines'
   // Static <details> under the prompt: the log text is written in place, so the element
   // (and its open/closed state) is never rebuilt by a log line.
   // Collapsed by default: the log is revealed by clicking the toggle.
-  assert.match(html, /<details id="logBox" class="collapse">\s*<summary>Execution<\/summary>\s*<pre id="log" class="log"><\/pre>/);
+  // The task summary (Execution result) is rendered inside the Execution block,
+  // never at the top of the detail body.
+  assert.match(html, /<details id="logBox" class="collapse">\s*<summary>Execution<\/summary>\s*<div id="taskSummary" class="md summary hidden"><\/div>\s*<pre id="log" class="log"><\/pre>/);
   assert.doesNotMatch(html, /<details id="logBox" class="collapse" open>/);
-  assert.match(html, /el\('log'\)\.textContent = log;/);
+  assert.match(html, /renderLog\(taskId\)/);
+  assert.match(html, /el\('taskSummary'\)\.innerHTML = summary;/);
+  // detailBody builds only metadata/errors/retry: the summary must not be in it.
+  assert.match(html, /'<button class="secondary" data-retry="' \+ esc\(task\.id\)/);
+  assert.doesNotMatch(html, /detailBody'\)\.innerHTML =[\s\S]{0,600}renderMarkdown\(task\.summary\)/);
   assert.doesNotMatch(html, /logOpen/);
   // Native details, so the toggle needs no click handler of its own.
   assert.match(html, /details\.collapse > summary::before/);
@@ -72,17 +78,54 @@ test('sidebar joins the log with an escaped newline', () => {
   assert.ok(html.includes(".join('\\n')"), 'log join must escape the newline');
 });
 
-test('sidebar shows the context budget bar of the running attempt', () => {
+test('sidebar shows the context token bar scaled to the model window', () => {
   // Labelled, no toggle and no file list: the bar appears on its own once a run built its context.
   assert.match(html, /<div id="contextBox" class="hidden">\s*<p class="label">Context used<\/p>\s*<div id="contextBar" class="bar"><span id="contextFill"><\/span><\/div>/);
   assert.doesNotMatch(html, /<details id="contextBox"/);
   assert.doesNotMatch(html, /ctx-src/);
-  assert.ok(html.includes(`const CONTEXT_BUDGET = ${MAX_TOTAL_CONTEXT_CHARS};`), 'the bar must use the real budget');
-  // Injected files only: what the agent reads on its own is not ours to spend.
-  assert.match(html, /const used = injected\.reduce\(function \(sum, file\) \{ return sum \+ \(file\.chars \|\| 0\); \}, 0\);/);
-  assert.match(html, /const pct = Math\.min\(100, Math\.round\(\(used \/ CONTEXT_BUDGET\) \* 100\)\);/);
-  assert.match(html, /el\('contextBox'\)\.classList\.toggle\('hidden', injected\.length === 0\)/);
+  // Denominator is the executor model's token window (from Pi), not the char budget.
+  assert.ok(html.includes(`const CONTEXT_BUDGET_TOKENS = ${Math.round(MAX_TOTAL_CONTEXT_CHARS / 4)};`), 'fallback budget must be tokens');
+  assert.match(html, /const windowTokens = state\.contextWindowTokens \|\| CONTEXT_BUDGET_TOKENS;/);
+  assert.match(html, /const usedChars = task\.contextChars \|\| 0;/);
+  assert.match(html, /const usedTokens = Math\.round\(usedChars \/ CHARS_PER_TOKEN\);/);
+  assert.match(html, /const pct = Math\.min\(100, Math\.round\(\(usedTokens \/ windowTokens\) \* 100\)\);/);
+  assert.match(html, /tokens · ' \+ pct \+ '%'/);
+  assert.match(html, /el\('contextBox'\)\.classList\.toggle\('hidden', usedChars === 0\)/);
   assert.match(html, /el\('contextBar'\)\.classList\.toggle\('full', pct >= 90\)/);
+});
+
+test('sidebar offers a run-from-scratch control once a task has executed', () => {
+  assert.match(html, /<button id="runAll">Run All<\/button>\s*<button id="rerunAll"/);
+  assert.match(html, /const hasExecuted = state\.tasks\.some\(function \(t\) \{ return t\.executed; \}\);/);
+  assert.match(html, /el\('rerunAll'\)\.classList\.toggle\('hidden', !hasExecuted\)/);
+  assert.match(html, /el\('rerunAll'\)\.addEventListener\('click', function \(\) \{ vscode\.postMessage\(\{ type: 'rerunPlan' \}\); \}\);/);
+  assert.match(providerSource, /async rerunPlan\(\): Promise<void> \{/);
+  assert.match(providerSource, /task\.result = undefined;/);
+  assert.match(providerSource, /case 'rerunPlan':/);
+  // The plan itself is kept: only results and status are reset.
+  assert.doesNotMatch(providerSource, /rerunPlan[\s\S]{0,400}session\.plan = undefined/);
+});
+
+test('sidebar can mark an executed task as to do after confirmation', () => {
+  // Offered only for a task that already produced a result.
+  assert.match(html, /task\.executed\s*\? '<button class="secondary" data-mark=/);
+  assert.match(html, /vscode\.postMessage\(\{ type: 'markTaskPending', id: target\.dataset\.mark \}\)/);
+  assert.match(html, /\[data-delete\],\[data-task\],\[data-retry\],\[data-mark\],\[data-session\]/);
+  assert.match(providerSource, /async markTaskPending\(taskId: string\): Promise<void> \{/);
+  assert.match(providerSource, /showWarningMessage\(\s*`Mark task \$\{task\.id\} as to do\?/);
+  assert.match(providerSource, /confirmed !== 'Mark as To Do'/);
+  assert.match(providerSource, /case 'markTaskPending':/);
+  // The result is discarded and the task becomes runnable again.
+  assert.match(providerSource, /private resetTask\(task: Task\): void \{/);
+  assert.match(providerSource, /task\.status = 'pending';/);
+});
+
+test('sidebar lets the detail set a per-task thinking level', () => {
+  assert.match(html, /<label for="taskThinking">Thinking \(this task\)<\/label>\s*<select id="taskThinking"><\/select>/);
+  assert.match(html, /fillThinking\('taskThinking', task\.thinking \|\| ''\)/);
+  assert.match(html, /type: 'saveTaskThinking', id: state\.detailTaskId, thinking: el\('taskThinking'\)\.value/);
+  assert.match(providerSource, /async saveTaskThinking\(taskId: string, thinking: string\)/);
+  assert.match(providerSource, /thinking: task\.thinking \?\? ''/);
 });
 
 test('sidebar drops the previous session logs when the active session changes', () => {
@@ -106,12 +149,8 @@ test('sidebar spinner is a rotating arc, not a uniform ring', () => {
   assert.match(html, /\.spinner \{[\s\S]*?border-top-color: var\(--vscode-progressBar-background/);
 });
 
-test('sidebar scopes the plan failure notice to a session still in progress', () => {
-  assert.match(html, /const CONCLUDED_SESSION = \{ completed: 1, failed: 1, cancelled: 1 \}/);
-  assert.match(
-    html,
-    /const show = Boolean\(planNoticeText\) && !\(session && CONCLUDED_SESSION\[session\.status\]\)/
-  );
+test('sidebar preserves final failure notices', () => {
+  assert.match(html, /const show = Boolean\(planNoticeText\);/);
   assert.match(html, /function setPlanNotice\(text\) \{\n    planNoticeText = text \|\| '';/);
 });
 
@@ -184,10 +223,8 @@ test('settings show the resolved python interpreter without rewriting the settin
 test('every runner action reports an unusable python interpreter', () => {
   assert.match(providerSource, /private reportUnusablePython\(\): boolean \{/);
   assert.match(providerSource, /is not a working Python interpreter/);
-  assert.equal(
-    (providerSource.match(/if \(this\.reportUnusablePython\(\)\) \{ return; \}/g) || []).length,
-    4
-  );
+  assert.match(providerSource, /private async runSingleTask/);
+  assert.ok((providerSource.match(/this\.reportUnusablePython\(\)/g) || []).length >= 5);
 });
 
 test('settings put max repair attempts and font size on one row', () => {
@@ -209,6 +246,12 @@ test('executor thinking and timeout share one 50/50 row', () => {
     html,
     /<div class="grid2 even">\s*<div class="field">\s*<label for="pi\.thinking">[\s\S]*?pi\.timeout/
   );
+});
+
+test('settings system prompt scrolls instead of auto-growing', () => {
+  assert.match(html, /textarea\.scroll \{ max-height: 320px; overflow: auto; resize: none; \}/);
+  assert.match(html, /id="planner\.systemPrompt" class="md scroll"/);
+  assert.match(html, /area\.classList\.contains\('scroll'\)/);
 });
 
 test('sidebar textareas grow with their content instead of scrolling', () => {

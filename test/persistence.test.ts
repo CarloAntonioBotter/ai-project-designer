@@ -43,8 +43,8 @@ test('ArtifactStore archives the previous attempt before a retry', () => {
 test('ArtifactStore saves and reads artifacts', () => {
   const root = workspace();
   const store = new ArtifactStore(root);
-  store.saveArtifact('architecture.md', '# Arch');
-  assert.equal(store.readArtifact('architecture.md'), '# Arch');
+  const artifact = store.saveArtifact('architecture.md', '# Arch', 'task-001', 1);
+  assert.equal(store.readArtifact(artifact.storagePath!), '# Arch');
   assert.equal(store.readArtifact('missing.md'), undefined);
 });
 

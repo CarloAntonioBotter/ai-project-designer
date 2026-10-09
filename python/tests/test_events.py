@@ -26,10 +26,12 @@ class EventParserTests(unittest.TestCase):
         parser = EventParser()
         parser.feed('{"type":"tool_execution_start","toolCallId":"1","toolName":"write","args":{"path":"src/a.ts"}}')
         parser.feed('{"type":"tool_execution_start","toolCallId":"2","toolName":"bash","args":{"command":"python -m unittest"}}')
+        parser.feed('{"type":"tool_execution_end","toolCallId":"1","toolName":"write","isError":false}')
+        parser.feed('{"type":"tool_execution_end","toolCallId":"2","toolName":"bash","isError":false}')
         self.assertIn("src/a.ts", parser.state.artifacts_created)
         self.assertIn("src/a.ts", parser.state.files_changed)
         self.assertEqual(parser.state.commands_executed, ["python -m unittest"])
-        self.assertEqual(parser.test_reports(), [{"command": "python -m unittest", "detected": True}])
+        self.assertEqual(parser.test_reports(), [{"command": "python -m unittest", "detected": True, "status": "passed"}])
 
     def test_malformed_line_is_recorded_not_raised(self) -> None:
         parser = EventParser()

@@ -21,7 +21,6 @@ export interface PiExecutionConfigPayload {
   agentDir?: string;
   timeoutMs: number;
   extraArgs?: string[];
-  allowedExtensions?: string[];
 }
 
 export interface PiContextFile {
@@ -100,6 +99,20 @@ export interface PiModelInfo {
   maxOutput?: string;
   thinking?: boolean;
   images?: boolean;
+}
+
+/** Parse a Pi model-table size ("262.1K", "1M", "200000") into a token count. */
+export function parseTokenCount(value?: string): number | undefined {
+  const match = /^([\d.]+)\s*([KM])?$/i.exec((value ?? '').trim());
+  if (!match) {
+    return undefined;
+  }
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount)) {
+    return undefined;
+  }
+  const suffix = match[2]?.toUpperCase();
+  return Math.round(amount * (suffix === 'M' ? 1_000_000 : suffix === 'K' ? 1_000 : 1));
 }
 
 const VALID_STATUSES: PiStatus[] = ['completed', 'failed', 'cancelled', 'timeout', 'error'];

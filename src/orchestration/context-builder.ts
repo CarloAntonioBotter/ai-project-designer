@@ -6,11 +6,10 @@
  * previous Pi run or conversation.
  */
 
-import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { ArtifactReference, ContextFile, GitContext, TaskContext } from '../models/types';
-import { resolveInside } from '../persistence/artifact-store';
+import { ArtifactReference, ContextFile, TaskContext } from '../models/types';
+import { readBounded, resolveInside } from '../persistence/paths';
 
 export const MAX_FILE_CHARS = 20000;
 export const MAX_CONTEXT_FILES = 15;
@@ -33,30 +32,7 @@ export function readContextFile(workspaceRoot: string, relativePath: string): Co
   if (!fs.existsSync(absolute) || !fs.statSync(absolute).isFile()) {
     return { path: relativePath, content: `(file not found: ${relativePath})` };
   }
-  const raw = fs.readFileSync(absolute, 'utf8');
-  if (raw.length > MAX_FILE_CHARS) {
-    return { path: relativePath, content: raw.slice(0, MAX_FILE_CHARS), truncated: true };
-  }
-  return { path: relativePath, content: raw };
-}
-
-export function collectGitContext(workspaceRoot: string): GitContext | undefined {
-  try {
-    const output = execFileSync('git', ['status', '--porcelain', '--branch'], {
-      cwd: workspaceRoot,
-      encoding: 'utf8',
-      timeout: 5000,
-    });
-    const lines = output.split('\n').filter((line) => line.trim().length > 0);
-    const branchLine = lines.find((line) => line.startsWith('##'));
-    return {
-      branch: branchLine?.replace(/^##\s*/, ''),
-      modified: lines.filter((line) => /^\s?M/.test(line)).map((line) => line.slice(3).trim()),
-      staged: lines.filter((line) => /^[MADRC]/.test(line)).map((line) => line.slice(3).trim()),
-    };
-  } catch {
-    return undefined;
-  }
+  return { path: relativePath, ...readBounded(absolute, MAX_FILE_CHARS) };
 }
 
 export interface BuildContextInput {
@@ -66,34 +42,40 @@ export interface BuildContextInput {
   artifacts?: ArtifactReference[];
   constraints?: string[];
   environment?: Record<string, string>;
+  prompt?: string;
+  instructions?: string[];
 }
 
 export function buildTaskContext(input: BuildContextInput): TaskContext {
-  const files: ContextFile[] = [];
-  let totalChars = 0;
-
-  for (const relativePath of input.filesToRead.slice(0, MAX_CONTEXT_FILES)) {
-    const file = readContextFile(input.workspaceRoot, relativePath);
-    if (totalChars + file.content.length > MAX_TOTAL_CONTEXT_CHARS) {
-      files.push({ path: file.path, content: '(omitted: context budget exceeded)', truncated: true });
-      continue;
-    }
-    totalChars += file.content.length;
-    files.push(file);
-  }
-
-  for (const file of input.explicitFiles ?? []) {
-    files.push(file);
-  }
-
-  return {
-    workspaceRoot: input.workspaceRoot,
-    files,
-    artifacts: input.artifacts ?? [],
-    constraints: input.constraints ?? [],
-    environment: input.environment ?? {},
-    git: collectGitContext(input.workspaceRoot),
+  const context: TaskContext = {
+    workspaceRoot: input.workspaceRoot, files: [], artifacts: [],
+    constraints: input.constraints ?? [], environment: input.environment ?? {}, omitted: [],
   };
+  // Reserve room for the Python prompt wrapper as well as explicit instructions.
+  const fixedChars = 2000 + (input.prompt?.length ?? 0) + JSON.stringify(input.instructions ?? []).length;
+  const size = (): number => fixedChars + JSON.stringify(context).length;
+  if (size() > MAX_TOTAL_CONTEXT_CHARS) { throw new Error('Prompt and constraints exceed context budget'); }
+  const add = (item: ContextFile | ArtifactReference, artifact: boolean): void => {
+    const list = artifact ? context.artifacts : context.files;
+    if (!artifact && list.length >= MAX_CONTEXT_FILES) {
+      context.omitted!.push(item.path); return;
+    }
+    const content = item.content ?? '';
+    const bounded = { ...item, content: content.slice(0, MAX_FILE_CHARS) };
+    if (content.length > MAX_FILE_CHARS && !artifact) { (bounded as ContextFile).truncated = true; }
+    (list as Array<ContextFile | ArtifactReference>).push(bounded);
+    if (size() > MAX_TOTAL_CONTEXT_CHARS) { list.pop(); context.omitted!.push(item.path); }
+    else if (content.length > MAX_FILE_CHARS) { context.omitted!.push(`${item.path} (truncated)`); }
+  };
+  for (const file of input.explicitFiles ?? []) { add(file, false); }
+  for (const name of input.filesToRead) {
+    if (context.files.length >= MAX_CONTEXT_FILES) { context.omitted!.push(name); continue; }
+    add(readContextFile(input.workspaceRoot, name), false);
+  }
+  for (const artifact of input.artifacts ?? []) { add(artifact, true); }
+  if (size() > MAX_TOTAL_CONTEXT_CHARS) { throw new Error('Context metadata exceeds budget'); }
+  context.initialChars = size();
+  return context;
 }
 
 /** Compact, bounded workspace listing used as planner context. */

@@ -15,6 +15,8 @@ export interface ArtifactReference {
   path: string;
   kind: string;
   content?: string;
+  /** Immutable task/attempt snapshot; absent on legacy references. */
+  storagePath?: string;
 }
 
 export interface ContextFile {
@@ -23,19 +25,14 @@ export interface ContextFile {
   truncated?: boolean;
 }
 
-export interface GitContext {
-  branch?: string;
-  modified: string[];
-  staged: string[];
-}
-
 export interface TaskContext {
   workspaceRoot: string;
   files: ContextFile[];
   artifacts: ArtifactReference[];
   constraints: string[];
   environment: Record<string, string>;
-  git?: GitContext;
+  omitted?: string[];
+  initialChars?: number;
 }
 
 export interface PiRunInfo {
@@ -52,6 +49,8 @@ export type PiStatus = 'completed' | 'failed' | 'cancelled' | 'timeout' | 'error
 
 export interface TaskResult {
   status: PiStatus;
+  /** Process completion is not proof of semantic acceptance criteria. */
+  verification?: 'checked' | 'unverified';
   summary: string;
   attempt: number;
   pi: PiRunInfo;
@@ -86,6 +85,8 @@ export interface Task {
   commands?: string[];
   /** Integration configuration, NOT an alternative LLM provider. */
   executorRuntime: 'pi';
+  /** Per-task Pi thinking override; empty means the executor default. */
+  thinking?: string;
   retryCount: number;
   result?: TaskResult;
 }

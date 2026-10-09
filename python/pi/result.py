@@ -31,7 +31,7 @@ def map_status(exit_code: int | None, cancelled: bool, timed_out: bool, parser: 
         return STATUS_ERROR
     if exit_code != 0:
         return STATUS_FAILED
-    if parser.state.stop_reason in ("error", "aborted"):
+    if parser.state.stop_reason in ("error", "aborted") or parser.state.tool_failures:
         return STATUS_FAILED
     return STATUS_COMPLETED
 
@@ -50,7 +50,7 @@ def normalize(
 ) -> TaskExecutionResult:
     status = map_status(exit_code, cancelled, timed_out, parser)
 
-    errors = list(parser.state.errors)
+    errors = list(parser.state.errors) + list(parser.state.tool_failures.values())
     warnings = list(parser.state.warnings)
     if timed_out:
         errors.append(f"pi execution timed out after {config.timeout_ms} ms")

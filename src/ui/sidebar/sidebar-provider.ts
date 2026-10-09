@@ -30,7 +30,8 @@ import {
   runnerScriptPath,
   workspaceDefinedKeys,
 } from '../../pi/pi-config';
-import { PiExecutionConfigPayload, ProgressEvent } from '../../pi/pi-protocol';
+import { PiRunner } from '../../pi/pi-runner';
+import { PiExecutionConfigPayload, ProgressEvent, parseTokenCount } from '../../pi/pi-protocol';
 import { renderSidebarHtml } from './sidebar-html';
 
 const DEFAULT_CONSTRAINTS = [
@@ -51,7 +52,7 @@ interface UiState {
     status: string;
     request: string;
     workspaceRoot: string;
-    plan?: Session['plan'];
+    plan?: { project: NonNullable<Session['plan']>['project'] };
   };
   tasks: Array<Record<string, unknown>>;
   busy: boolean;
@@ -59,6 +60,8 @@ interface UiState {
   runtime?: PiRuntimeReport;
   piModels: PiModelInfo[];
   piModelsError?: string;
+  /** Context window (tokens) of the configured executor model, for the context bar. */
+  contextWindowTokens?: number;
   detailTaskId?: string;
   settings: SettingsView;
 }
@@ -98,8 +101,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   private busy = false;
   private abortController?: AbortController;
   private planProgress = '';
-  private readonly logs = new Map<string, string[]>();
   private readonly textBuffers = new Map<string, string>();
+  private textTimer?: NodeJS.Timeout;
   private detailTaskId?: string;
 
   constructor(private readonly context: vscode.ExtensionContext) {
@@ -113,6 +116,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           return;
         }
         this.config = readConfig();
+        this.propagateSettingsToSessions();
         void this.pushState();
       })
     );
@@ -122,7 +126,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     this.view = view;
     view.webview.options = { enableScripts: true };
     view.webview.html = renderSidebarHtml(view.webview);
-    view.webview.onDidReceiveMessage((message: Record<string, unknown>) => this.onMessage(message));
+    this.context.subscriptions.push(view.webview.onDidReceiveMessage((message: Record<string, unknown>) => {
+      void this.onMessage(message).catch((error) => {
+        this.postNotice('plan', false, describe(error));
+        void vscode.window.showErrorMessage(describe(error));
+      });
+    }));
     void this.probeRuntime();
   }
 
@@ -137,7 +146,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       prompt: 'Describe the project or change you want planned',
       ignoreFocusOut: true,
     });
-    if (response === undefined) {
+    if (response === undefined || this.busy) {
       return;
     }
     this.session = this.sessionStore().createSession({
@@ -225,24 +234,25 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
     if (this.reportUnusablePython()) { return; }
     this.busy = true;
-    this.abortController = new AbortController();
+    const controller = new AbortController();
+    this.abortController = controller;
     session.status = 'running';
     try {
       refreshBlockedTasks(session.plan.tasks);
       let next = nextRunnableTask(session.plan.tasks);
-      while (next && !this.abortController.signal.aborted) {
+      while (next && !controller.signal.aborted) {
         await this.runTask(next);
         this.sessionStore().saveSession(session);
         refreshBlockedTasks(session.plan.tasks);
         next = nextRunnableTask(session.plan.tasks);
       }
-      session.status = this.abortController.signal.aborted
+      session.status = controller.signal.aborted
         ? 'cancelled'
         : isPlanComplete(session.plan.tasks)
           ? 'completed'
           : 'failed';
     } catch (error) {
-      const aborted = this.abortController.signal.aborted;
+      const aborted = controller.signal.aborted;
       const cause = describe(error);
       session.status = aborted ? 'cancelled' : 'failed';
       if (aborted) {
@@ -259,40 +269,59 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  /** Re-run every task of the current plan from scratch, preserving the plan itself. */
+  async rerunPlan(): Promise<void> {
+    const session = this.session;
+    if (!session?.plan || this.busy) {
+      return;
+    }
+    if (this.reportUnusablePython()) { return; }
+    for (const task of session.plan.tasks) {
+      this.resetTask(task);
+    }
+    this.sessionStore().saveSession(session);
+    await this.runPlan();
+  }
+
   async runCurrentTask(): Promise<void> {
+    if (this.busy) { return; }
+    refreshBlockedTasks(this.session?.plan?.tasks ?? []);
     const task = nextRunnableTask(this.session?.plan?.tasks ?? []);
     if (!task) {
       void vscode.window.showInformationMessage('No runnable task.');
       return;
     }
-    if (this.reportUnusablePython()) { return; }
-    this.busy = true;
-    this.abortController = new AbortController();
-    try {
-      await this.runTask(task);
-    } finally {
-      this.busy = false;
-      this.abortController = undefined;
-      await this.pushState();
-    }
+    await this.runSingleTask(task);
   }
 
   async retryTask(taskId?: string): Promise<void> {
     const tasks = this.session?.plan?.tasks ?? [];
-    const task = taskId ? tasks.find((candidate) => candidate.id === taskId) : nextRunnableTask(tasks);
+    const task = taskId ? tasks.find((candidate) => candidate.id === taskId)
+      : tasks.find((candidate) => candidate.id === this.detailTaskId) ?? tasks.find((candidate) => candidate.status === 'failed');
     if (this.busy || !task || task.status === 'running') {
       return;
     }
-    if (this.reportUnusablePython()) { return; }
+    if (!dependencyState(task, tasks).ready || this.reportUnusablePython()) { return; }
     task.retryCount += 1;
     task.status = 'pending';
+    await this.runSingleTask(task);
+  }
+
+  private async runSingleTask(task: Task): Promise<void> {
+    const session = this.session;
+    if (this.busy || !session?.plan || this.reportUnusablePython()) { return; }
     this.busy = true;
-    this.abortController = new AbortController();
-    try {
-      await this.runTask(task);
-    } finally {
+    const controller = new AbortController();
+    this.abortController = controller;
+    session.status = 'running';
+    try { await this.runTask(task); }
+    finally {
+      refreshBlockedTasks(session.plan.tasks);
+      session.status = controller.signal.aborted ? 'cancelled' : isPlanComplete(session.plan.tasks)
+        ? 'completed' : session.plan.tasks.some((candidate) => candidate.status === 'failed') ? 'failed' : 'planned';
       this.busy = false;
       this.abortController = undefined;
+      this.sessionStore().saveSession(session);
       await this.pushState();
     }
   }
@@ -301,10 +330,63 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     this.abortController?.abort();
   }
 
+  dispose(): void {
+    this.stop();
+    PiRunner.stopAll();
+    if (this.textTimer) { clearTimeout(this.textTimer); }
+    this.textBuffers.clear();
+    this.view = undefined;
+  }
+
+  /** Revert an executed task to pending after confirmation; its result is discarded. */
+  async markTaskPending(taskId: string): Promise<void> {
+    const session = this.session;
+    const task = session?.plan?.tasks.find((candidate) => candidate.id === taskId);
+    if (!session?.plan || !task || this.busy || !task.result) {
+      return;
+    }
+    const confirmed = await vscode.window.showWarningMessage(
+      `Mark task ${task.id} as to do? Its result will be discarded; run the plan to execute it again.`,
+      { modal: true },
+      'Mark as To Do'
+    );
+    if (confirmed !== 'Mark as To Do' || this.busy || this.session !== session) {
+      return;
+    }
+    this.resetTask(task);
+    session.status = 'planned';
+    refreshBlockedTasks(session.plan.tasks);
+    this.sessionStore().saveSession(session);
+    await this.pushState();
+  }
+
+  /** Drop a task's result so it is runnable again from scratch. */
+  private resetTask(task: Task): void {
+    task.status = 'pending';
+    task.result = undefined;
+    task.outputArtifacts = [];
+    task.retryCount = 0;
+    if (task.context) {
+      task.context.files = [];
+      task.context.artifacts = [];
+    }
+  }
+
+  /** Persist a per-task thinking override; the next run of that task uses it. */
+  async saveTaskThinking(taskId: string, thinking: string): Promise<void> {
+    const task = this.session?.plan?.tasks.find((candidate) => candidate.id === taskId);
+    if (!task || !this.session || this.busy) {
+      return;
+    }
+    task.thinking = thinking || undefined;
+    this.sessionStore().saveSession(this.session);
+    await this.pushState();
+  }
+
   /** Persist a hand-edited task prompt; the next run of that task uses it. */
   async saveTaskPrompt(taskId: string, prompt: string): Promise<void> {
     const task = this.session?.plan?.tasks.find((candidate) => candidate.id === taskId);
-    if (!task || !this.session || task.result) {
+    if (!task || !this.session || task.result || this.busy) {
       // Already executed: its prompt is frozen.
       return;
     }
@@ -329,7 +411,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       );
       id = picked?.id;
     }
-    if (!id) {
+    if (!id || this.busy) {
       return;
     }
     const session = store.loadSession(id);
@@ -373,10 +455,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         { modal: true },
         'Delete'
       );
-      if (confirmed !== 'Delete') {
+      if (confirmed !== 'Delete' || this.busy) {
         return;
       }
-    }
+    } else { return; }
     store.deleteSession(sessionId);
     if (this.session?.id === sessionId) {
       this.session = undefined;
@@ -392,7 +474,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
   async checkRuntime(): Promise<PiRuntimeReport> {
     const report = await this.probeRuntime();
-    if (!report.available) {
+    if (!report.available || !report.compatible) {
       void vscode.window.showErrorMessage(
         `Pi runtime unavailable: ${report.error}. Configure aiProjectDesigner.pi.command.`
       );
@@ -451,7 +533,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       noTools: false,
       trustProjectFiles: false,
       agentDir: this.config.pi.agentDir,
-      allowedExtensions: this.config.pi.allowedExtensions ?? [],
       timeoutMs: this.config.planner.timeoutMs,
     };
   }
@@ -489,12 +570,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       'planner.provider': String(planner.provider ?? ''),
       'planner.model': String(planner.model ?? ''),
       'planner.thinking': String(planner.thinking ?? ''),
-      'planner.timeout': Math.max(1000, Number(planner.timeout ?? 300000)),
+      'planner.timeout': Number(planner.timeout ?? 300000),
       'planner.systemPrompt': String(planner.systemPrompt ?? ''),
       'pi.provider': String(pi.provider ?? ''),
       'pi.model': String(pi.model ?? ''),
       'pi.thinking': String(pi.thinking ?? ''),
-      'pi.timeout': Math.max(1000, Number(pi.timeout ?? 120000)),
+      'pi.timeout': Number(pi.timeout ?? 120000),
       maxRetries: Number(raw.maxRetries ?? 2),
       'ui.fontSize': Number(raw.fontSize ?? 0),
       autoExecute: Boolean(raw.autoExecute),
@@ -530,7 +611,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private async testPlanner(): Promise<void> {
+    if (this.busy || this.reportUnusablePython()) { return; }
+    this.busy = true;
+    const controller = new AbortController();
+    this.abortController = controller;
     try {
+      await this.pushState();
       if (!this.config.planner.model) {
         throw new Error('planner.model is not set');
       }
@@ -543,10 +629,15 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       await provider.generate({
         system: 'You are a connectivity probe.',
         user: 'Reply with the single word OK.',
+        signal: controller.signal,
       });
       this.postNotice('settings', true, `Planner reachable (${provider.id}/${provider.model}).`);
     } catch (error) {
       this.postNotice('settings', false, `Planner test failed: ${describe(error)}`);
+    } finally {
+      this.busy = false;
+      this.abortController = undefined;
+      await this.pushState();
     }
   }
 
@@ -555,46 +646,56 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   }
 
   // -- webview messaging ---------------------------------------------------
-  private onMessage(message: Record<string, unknown>): void {
+  private async onMessage(message: Record<string, unknown>): Promise<void> {
     switch (message.type) {
+      case 'webviewReady':
+        await this.pushState();
+        break;
       case 'newSession':
-        void this.newSession();
+        await this.newSession();
         break;
       case 'generatePlan':
-        void this.updateRequestThenGenerate(String(message.request ?? ''));
+        await this.updateRequestThenGenerate(String(message.request ?? ''));
         break;
       case 'runPlan':
-        void this.runPlan();
+        await this.runPlan();
+        break;
+      case 'rerunPlan':
+        await this.rerunPlan();
+        break;
+      case 'saveTaskThinking':
+        await this.saveTaskThinking(String(message.id ?? ''), String(message.thinking ?? ''));
+        break;
+      case 'markTaskPending':
+        await this.markTaskPending(String(message.id ?? ''));
         break;
       case 'stop':
         this.stop();
         break;
       case 'saveTaskPrompt':
-        void this.saveTaskPrompt(String(message.id ?? ''), String(message.prompt ?? ''));
+        await this.saveTaskPrompt(String(message.id ?? ''), String(message.prompt ?? ''));
         break;
       case 'retryTask':
-        void this.retryTask(String(message.id ?? ''));
+        await this.retryTask(String(message.id ?? ''));
         break;
       case 'openSession':
-        void this.openSession(String(message.id ?? ''));
+        await this.openSession(String(message.id ?? ''));
         break;
       case 'deleteSession':
-        void this.deleteSession(String(message.id ?? ''));
+        await this.deleteSession(String(message.id ?? ''));
         break;
       case 'refreshContext':
-        void this.refreshContext();
+        await this.refreshContext();
         break;
       case 'saveSettings':
-        void this.saveSettings((message.settings ?? {}) as Record<string, unknown>);
+        await this.saveSettings((message.settings ?? {}) as Record<string, unknown>);
         break;
       case 'checkRuntime':
-        void this.probeRuntime();
-        break;
       case 'refreshModels':
-        void this.probeRuntime();
+        await this.probeRuntime();
         break;
       case 'testPlanner':
-        void this.testPlanner();
+        await this.testPlanner();
         break;
       default:
         break;
@@ -602,6 +703,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private async updateRequestThenGenerate(request: string): Promise<void> {
+    if (this.busy) { return; }
     if (this.session) {
       this.session.request = request;
       this.sessionStore().saveSession(this.session);
@@ -632,13 +734,18 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
 
     task.status = 'running';
+    task.outputArtifacts = [];
+    this.textBuffers.delete(task.id);
+    this.view?.webview.postMessage({ type: 'taskLogReset', taskId: task.id });
     this.detailTaskId = task.id;
-    await this.pushState();
-
     try {
+      this.sessionStore().saveSession(session);
+      await this.pushState();
       const runContext = buildTaskContext({
         workspaceRoot: session.workspaceRoot,
         filesToRead: task.filesToRead,
+        prompt: task.executorPrompt,
+        instructions: task.executorInstructions,
         artifacts: [...this.dependencyArtifacts(task), ...this.previousAttemptArtifact(task)],
         constraints: DEFAULT_CONSTRAINTS,
         environment: {},
@@ -685,6 +792,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       };
       this.postNotice('plan', false, `Task ${task.id} failed: ${cause}`);
     }
+    this.flushText();
     this.sessionStore().saveSession(session);
     await this.pushState();
   }
@@ -698,20 +806,19 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       if (!dependency?.result) {
         continue;
       }
-      const paths = new Set<string>([
-        ...dependency.result.artifacts.map((artifact) => artifact.path),
-        ...dependency.result.filesChanged,
-      ]);
-      for (const path of paths) {
+      for (const artifact of dependency.result.artifacts) {
+        const { path, storagePath } = artifact;
+        // Legacy shared snapshots cannot be attributed reliably to a task.
+        if (!storagePath) { continue; }
         let content: string | undefined;
         try {
-          content = store.readArtifact(path);
+          content = store.readArtifact(storagePath);
         } catch {
           // Legacy results may carry paths the store cannot read; skip them.
           continue;
         }
-        if (content !== undefined && !refs.has(path)) {
-          refs.set(path, { path, kind: 'file', content });
+        if (content !== undefined) {
+          refs.set(storagePath, { path, storagePath, kind: `file from ${dependency.id}`, content });
         }
       }
     }
@@ -725,7 +832,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     // Explicit artifact from the failed attempt; never the Pi conversation.
     return [
       {
-        path: `attempt-${task.retryCount}-result.json`,
+        path: `attempt-${task.result.attempt}-result.json`,
         kind: 'report',
         content: JSON.stringify(task.result, null, 2),
       },
@@ -749,8 +856,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     const type = String(event.type ?? '');
     if (type === 'text') {
       const buffer = (this.textBuffers.get(taskId) ?? '') + String((event as Record<string, unknown>).delta ?? '');
-      this.textBuffers.set(taskId, buffer);
-      this.postLog(taskId, `assistant: ${buffer}`, true);
+      this.textBuffers.set(taskId, buffer.slice(-64000));
+      if (!this.textTimer) { this.textTimer = setTimeout(() => this.flushText(), 100); }
       return;
     }
     if (type === 'thinking') {
@@ -780,24 +887,23 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     this.postLog(taskId, `▸ ${type}`);
   }
 
-  private postLog(taskId: string, line: string, replaceLast = false): void {
-    const lines = this.logs.get(taskId) ?? [];
-    if (replaceLast && lines.length > 0) {
-      lines[lines.length - 1] = line;
-    } else {
-      lines.push(line);
+  private flushText(): void {
+    if (this.textTimer) { clearTimeout(this.textTimer); this.textTimer = undefined; }
+    for (const [taskId, delta] of this.textBuffers) {
+      this.view?.webview.postMessage({ type: 'taskText', taskId, delta });
     }
-    if (lines.length > 500) {
-      lines.splice(0, lines.length - 500);
-    }
-    this.logs.set(taskId, lines);
-    this.view?.webview.postMessage({ type: 'taskLog', taskId, line, replaceLast });
+    this.textBuffers.clear();
+  }
+
+  private postLog(taskId: string, line: string): void {
+    this.flushText();
+    this.view?.webview.postMessage({ type: 'taskLog', taskId, line: line.slice(-64000) });
   }
 
   // -- persistence helpers -------------------------------------------------
   /** Drop every in-memory pointer to the previous session. */
   private resetSessionState(): void {
-    this.logs.clear();
+    if (this.textTimer) { clearTimeout(this.textTimer); this.textTimer = undefined; }
     this.textBuffers.clear();
     this.detailTaskId = undefined;
   }
@@ -849,6 +955,32 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     };
   }
 
+  /**
+   * Reflect current settings into every session that still has unfinished
+   * tasks, so session.json records what the remaining tasks will run with.
+   */
+  private propagateSettingsToSessions(): void {
+    const store = this.sessionStore();
+    for (const summary of store.listSessions()) {
+      const session = store.loadSession(summary.id);
+      if (!session?.plan || isPlanComplete(session.plan.tasks)) {
+        continue;
+      }
+      session.planner = this.plannerMetadata();
+      session.pi = {
+        ...session.pi,
+        command: this.config.pi.command,
+        mode: this.config.pi.mode,
+        noSession: this.config.pi.noSession,
+      };
+      store.saveSession(session);
+      if (this.session?.id === session.id) {
+        this.session.planner = session.planner;
+        this.session.pi = session.pi;
+      }
+    }
+  }
+
   private async pushState(): Promise<void> {
     const session = this.session;
     const state: UiState = {
@@ -859,7 +991,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             status: session.status,
             request: session.request,
             workspaceRoot: session.workspaceRoot,
-            plan: session.plan,
+            plan: session.plan ? { project: session.plan.project } : undefined,
           }
         : undefined,
       tasks: (session?.plan?.tasks ?? []).map((task) => this.taskToUi(task)),
@@ -872,10 +1004,24 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       runtime: this.runtime,
       piModels: this.piModels,
       piModelsError: this.piModelsError,
+      contextWindowTokens: this.contextWindowTokens(),
       detailTaskId: this.detailTaskId,
       settings: await this.getSettingsView(),
     };
     await this.view?.webview.postMessage({ type: 'state', state });
+  }
+
+  /** Context window (tokens) of the configured executor model, from Pi's model table. */
+  private contextWindowTokens(): number | undefined {
+    const model = this.config.pi.model;
+    if (!model) {
+      return undefined;
+    }
+    const provider = this.config.pi.provider;
+    const info =
+      this.piModels.find((candidate) => candidate.model === model && candidate.provider === provider) ??
+      this.piModels.find((candidate) => candidate.model === model);
+    return parseTokenCount(info?.context);
   }
 
   private taskToUi(task: Task): Record<string, unknown> {
@@ -887,13 +1033,20 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       dependencies: task.dependencies,
       objective: task.objective,
       executorPrompt: task.executorPrompt,
+      thinking: task.thinking ?? '',
+      // True once the task has produced a result: drives the "run from scratch" control.
+      executed: Boolean(task.result),
       acceptanceCriteria: task.acceptanceCriteria,
       summary: task.result?.summary,
       errors: task.result?.errors ?? [],
+      warnings: task.result?.warnings ?? [],
+      verification: task.result?.verification ?? 'unverified',
       attempt: task.result?.attempt ?? task.retryCount + 1,
       filesChanged: task.result?.filesChanged ?? [],
       // Chars of the context injected into this attempt: the sidebar shows the budget bar from it.
       contextFiles: (task.context?.files ?? []).map((file) => ({ chars: file.content.length })),
+      contextChars: task.context?.initialChars ?? 0,
+      contextOmitted: task.context?.omitted ?? [],
     };
   }
 }

@@ -29,10 +29,12 @@ class RunnerIntegrationTests(unittest.TestCase):
         os.environ["FAKE_PI_LOG"] = str(self.log_path)
         os.environ.pop("FAKE_PI_SLEEP", None)
         os.environ.pop("FAKE_PI_EXIT", None)
+        os.environ.pop("FAKE_PI_STREAM", None)
+        os.environ.pop("FAKE_PI_STREAM_SECONDS", None)
 
     def tearDown(self) -> None:
         CANCEL_EVENT.clear()
-        for key in ("FAKE_PI_LOG", "FAKE_PI_PROMPT_OUT", "FAKE_PI_WRITE_FILE", "FAKE_PI_SLEEP", "FAKE_PI_EXIT"):
+        for key in ("FAKE_PI_LOG", "FAKE_PI_PROMPT_OUT", "FAKE_PI_WRITE_FILE", "FAKE_PI_SLEEP", "FAKE_PI_EXIT", "FAKE_PI_STREAM", "FAKE_PI_STREAM_SECONDS"):
             os.environ.pop(key, None)
         self._tmp.cleanup()
 

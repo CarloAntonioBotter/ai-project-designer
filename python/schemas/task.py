@@ -96,7 +96,6 @@ class PiConfig:
     agent_dir: str | None = None
     timeout_ms: int = 120_000
     extra_args: list[str] = field(default_factory=list)
-    allowed_extensions: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -166,7 +165,6 @@ def _parse_pi(data: Any) -> PiConfig:
         agent_dir=_opt_str(raw, "agentDir", "pi"),
         timeout_ms=_opt_int(raw, "timeoutMs", "pi", 120_000),
         extra_args=_str_list(raw, "extraArgs", "pi"),
-        allowed_extensions=_str_list(raw, "allowedExtensions", "pi"),
     )
 
 
