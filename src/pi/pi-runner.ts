@@ -29,7 +29,7 @@ function failure(request: PiExecutionRequest, message: string, status: PiStatus 
   return {
     taskId: request.task_id, status, summary: message, attempt: request.attempt,
     pi: { agent: 'pi', sessionMode: 'no-session', command: request.pi.command, mode: 'json', exitCode: null },
-    artifacts: [], filesChanged: [], tests: [], commandsExecuted: [], errors: [message], warnings: [],
+    artifacts: [], filesChanged: [], tests: [], commandsExecuted: [], errors: [message], warnings: [], usage: {},
   };
 }
 

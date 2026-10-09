@@ -140,7 +140,12 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
     border: 1px solid #3a3a3a; border-radius: var(--radius);
   }
   .sessions li:hover { background: #303030; }
-  .sessions .session-name { flex: 1 1 auto; cursor: pointer; overflow-wrap: anywhere; }
+  /* The name is a button only for keyboard access: it must not paint its own
+     (blue) secondary-button frame inside the row's grey frame. */
+  .sessions .session-name {
+    flex: 1 1 auto; background: transparent; border: none; color: inherit;
+    text-align: left; padding: 0; cursor: pointer; overflow-wrap: anywhere;
+  }
   /* Icon buttons share one square box, so the stop control matches the trash buttons. */
   .sessions .session-del, #stop {
     flex: none; box-sizing: border-box; width: 1.6em; height: 1.6em; padding: 0; margin: 0;
@@ -336,6 +341,11 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
           <input type="number" id="pi.timeout" min="1" />
         </div>
       </div>
+      <div class="field">
+        <label for="pi.contextWindow">Context window (tokens)</label>
+        <input type="number" id="pi.contextWindow" min="0" step="1024" />
+        <div class="help">0 = the size Pi reports, which is the model maximum. Set what your runtime actually loads: LM Studio can serve 131072 of a 262144 model.</div>
+      </div>
     </fieldset>
 
     <fieldset>
@@ -388,6 +398,8 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
   let planNoticeText = '';
   const logs = Object.create(null);
   const streaming = Object.create(null);
+  // taskId -> tokens Pi reported for the last turn: the live context fill.
+  const usage = Object.create(null);
 
   const STATUS_ICON = { pending: '○', running: '●', completed: '✓', failed: '✗', blocked: '⊘', skipped: '–' };
 
@@ -499,6 +511,7 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
     fillModels('pi.model', s.pi.provider || '', s.pi.model || '');
     fillThinking('pi.thinking', s.pi.thinking || '');
     el('pi.timeout').value = toSeconds(s.pi.timeout);
+    el('pi.contextWindow').value = s.pi.contextWindow || 0;
     const hint = el('pythonResolved');
     hint.textContent = s.pythonResolved
       ? 'in use: ' + s.pythonResolved
@@ -531,7 +544,8 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
         provider: val('pi.provider'),
         model: val('pi.model'),
         thinking: val('pi.thinking'),
-        timeout: toMs(num('pi.timeout'))
+        timeout: toMs(num('pi.timeout')),
+        contextWindow: num('pi.contextWindow')
       },
       maxRetries: num('maxRetries'),
       fontSize: num('ui.fontSize'),
@@ -677,17 +691,18 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
     el('log').textContent = (logs[taskId] || []).join('\\n');
   }
 
-  // Initial prompt estimate only: Pi's later tool output is not included.
+  // Real Pi usage once a run reported it (the last request carries the whole
+  // context); the initial prompt estimate cannot see the tool output.
   function renderContext(task) {
-    const usedChars = task.contextChars || 0;
-    const usedTokens = Math.round(usedChars / CHARS_PER_TOKEN);
+    const live = Boolean(usage[task.id] || task.contextTokens);
+    const usedTokens = usage[task.id] || task.contextTokens || Math.round((task.contextChars || 0) / CHARS_PER_TOKEN);
     const windowTokens = state.contextWindowTokens || CONTEXT_BUDGET_TOKENS;
     const pct = Math.min(100, Math.round((usedTokens / windowTokens) * 100));
-    el('contextBox').classList.toggle('hidden', usedChars === 0);
+    el('contextBox').classList.toggle('hidden', usedTokens === 0);
     el('contextFill').style.width = pct + '%';
     el('contextBar').classList.toggle('full', pct >= 90);
     el('contextMeta').textContent =
-      'Initial prompt estimate: ~' + Math.round(usedTokens / 1000) + 'k / ' + Math.round(windowTokens / 1000) + 'k tokens · ' + pct + '%' +
+      (live ? 'Context used: ~' : 'Initial prompt estimate: ~') + Math.round(usedTokens / 1000) + 'k / ' + Math.round(windowTokens / 1000) + 'k tokens · ' + pct + '%' +
       ((task.contextOmitted || []).length ? ' · omitted/truncated: ' + task.contextOmitted.join(', ') : '');
   }
 
@@ -738,6 +753,7 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
         requestDirty = false;
         promptTaskId = undefined;
         for (const key in logs) { delete logs[key]; delete streaming[key]; }
+        for (const key in usage) { delete usage[key]; }
         setPlanNotice('');
       } else if (message.state.session && message.state.session.status === 'planning') {
         setPlanNotice('');
@@ -749,6 +765,10 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
     } else if (message.type === 'planProgress') {
       liveStatus = message.text || '';
       el('busyText').textContent = liveStatus;
+    } else if (message.type === 'taskUsage') {
+      usage[message.taskId] = message.tokens;
+      const task = state.tasks.find(function (t) { return t.id === message.taskId; });
+      if (task && state.detailTaskId === message.taskId) { renderContext(task); }
     } else if (message.type === 'taskLogReset') {
       logs[message.taskId] = [];
       streaming[message.taskId] = false;

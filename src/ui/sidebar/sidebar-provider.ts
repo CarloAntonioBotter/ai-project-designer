@@ -31,7 +31,7 @@ import {
   workspaceDefinedKeys,
 } from '../../pi/pi-config';
 import { PiRunner } from '../../pi/pi-runner';
-import { PiExecutionConfigPayload, ProgressEvent, parseTokenCount } from '../../pi/pi-protocol';
+import { PiExecutionConfigPayload, ProgressEvent, parseTokenCount, usageTokens } from '../../pi/pi-protocol';
 import { renderSidebarHtml } from './sidebar-html';
 
 const DEFAULT_CONSTRAINTS = [
@@ -80,6 +80,7 @@ interface SettingsView {
     model?: string;
     thinking?: string;
     timeout: number;
+    contextWindow: number;
   };
   pythonPath: string;
   pythonResolved?: string;
@@ -553,6 +554,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         model: config.pi.model,
         thinking: config.pi.thinking,
         timeout: config.pi.timeoutMs,
+        contextWindow: config.contextWindow,
       },
       pythonPath: config.pythonPath,
       pythonResolved: this.resolvedPython(),
@@ -576,6 +578,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       'pi.model': String(pi.model ?? ''),
       'pi.thinking': String(pi.thinking ?? ''),
       'pi.timeout': Number(pi.timeout ?? 120000),
+      'pi.contextWindow': Number(pi.contextWindow ?? 0),
       maxRetries: Number(raw.maxRetries ?? 2),
       'ui.fontSize': Number(raw.fontSize ?? 0),
       autoExecute: Boolean(raw.autoExecute),
@@ -863,6 +866,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     if (type === 'thinking') {
       return;
     }
+    if (type === 'usage') {
+      // Live context fill: Pi reports the prompt size of every turn it completes.
+      const tokens = usageTokens((event as Record<string, unknown>).usage);
+      if (tokens) {
+        this.view?.webview.postMessage({ type: 'taskUsage', taskId, tokens });
+      }
+      return;
+    }
     if (type === 'tool_start') {
       this.postLog(taskId, `▸ tool: ${String((event as Record<string, unknown>).tool ?? 'tool')}`);
       return;
@@ -1011,8 +1022,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     await this.view?.webview.postMessage({ type: 'state', state });
   }
 
-  /** Context window (tokens) of the configured executor model, from Pi's model table. */
+  /** Context window (tokens) of the configured executor model. Pi reports the
+   *  model maximum, which is not the length loaded by a local runtime (LM Studio
+   *  can serve 131k out of a 262k model), so the setting wins when it is set. */
   private contextWindowTokens(): number | undefined {
+    if (this.config.contextWindow > 0) {
+      return this.config.contextWindow;
+    }
     const model = this.config.pi.model;
     if (!model) {
       return undefined;
@@ -1046,6 +1062,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       // Chars of the context injected into this attempt: the sidebar shows the budget bar from it.
       contextFiles: (task.context?.files ?? []).map((file) => ({ chars: file.content.length })),
       contextChars: task.context?.initialChars ?? 0,
+      contextTokens: usageTokens(task.result?.usage),
       contextOmitted: task.context?.omitted ?? [],
     };
   }

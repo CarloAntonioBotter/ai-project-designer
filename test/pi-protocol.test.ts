@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeRunnerResult, parseProgressLine, parseTokenCount } from '../src/pi/pi-protocol';
+import { normalizeRunnerResult, parseProgressLine, parseTokenCount, usageTokens } from '../src/pi/pi-protocol';
+
+test('usageTokens reads the context Pi actually held', () => {
+  assert.equal(usageTokens({ input: 1310, output: 40, totalTokens: 1350 }), 1310);
+  assert.equal(usageTokens({ totalTokens: 900 }), 900);
+  assert.equal(usageTokens({}), undefined);
+  assert.equal(usageTokens(undefined), undefined);
+});
 
 test('parseProgressLine parses progress events', () => {
   const event = parseProgressLine('{"kind":"progress","type":"tool_start","tool":"bash"}');

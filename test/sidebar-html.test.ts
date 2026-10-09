@@ -86,12 +86,14 @@ test('sidebar shows the context token bar scaled to the model window', () => {
   // Denominator is the executor model's token window (from Pi), not the char budget.
   assert.ok(html.includes(`const CONTEXT_BUDGET_TOKENS = ${Math.round(MAX_TOTAL_CONTEXT_CHARS / 4)};`), 'fallback budget must be tokens');
   assert.match(html, /const windowTokens = state\.contextWindowTokens \|\| CONTEXT_BUDGET_TOKENS;/);
-  assert.match(html, /const usedChars = task\.contextChars \|\| 0;/);
-  assert.match(html, /const usedTokens = Math\.round\(usedChars \/ CHARS_PER_TOKEN\);/);
+  // Prefer what Pi reported for the last turn; fall back to the prompt estimate.
+  assert.match(html, /const usedTokens = usage\[task\.id\] \|\| task\.contextTokens \|\| Math\.round\(\(task\.contextChars \|\| 0\) \/ CHARS_PER_TOKEN\);/);
   assert.match(html, /const pct = Math\.min\(100, Math\.round\(\(usedTokens \/ windowTokens\) \* 100\)\);/);
   assert.match(html, /tokens · ' \+ pct \+ '%'/);
-  assert.match(html, /el\('contextBox'\)\.classList\.toggle\('hidden', usedChars === 0\)/);
+  assert.match(html, /el\('contextBox'\)\.classList\.toggle\('hidden', usedTokens === 0\)/);
   assert.match(html, /el\('contextBar'\)\.classList\.toggle\('full', pct >= 90\)/);
+  assert.match(html, /message\.type === 'taskUsage'/);
+  assert.match(html, /id="pi\.contextWindow"/);
 });
 
 test('sidebar offers a run-from-scratch control once a task has executed', () => {
@@ -158,6 +160,9 @@ test('sidebar fills each session row with the dark grey frame', () => {
   assert.match(html, /\.sessions li \{[\s\S]{0,300}background: #232323; color: #f0f0f0;/);
   assert.match(html, /\.sessions li \{[\s\S]{0,300}border: 1px solid #3a3a3a;/);
   assert.match(html, /\.sessions li:hover \{ background: #303030; \}/);
+  // The row's own frame is the only frame: the name button must not paint the
+  // theme's secondary (blue) button border on top of it.
+  assert.match(html, /\.sessions \.session-name \{[\s\S]{0,200}background: transparent; border: none;/);
 });
 
 test('sidebar emits a webview script that parses', () => {

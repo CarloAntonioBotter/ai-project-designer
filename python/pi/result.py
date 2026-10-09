@@ -111,4 +111,5 @@ def normalize(
         events=parser.events,
         started_at=started_at or _now(),
         finished_at=_now(),
+        usage=dict(parser.state.usage),
     )

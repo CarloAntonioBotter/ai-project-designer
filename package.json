@@ -2,7 +2,7 @@
 	"name": "ai-project-designer",
 	"displayName": "AI Project Designer",
 	"description": "Plan projects with a Planner LLM and execute each task through an isolated Pi Agent run driven by a Python process boundary.",
-	"version": "0.2.0",
+	"version": "0.2.1",
 	"publisher": "local",
 	"repository": {
 		"type": "git",
@@ -128,6 +128,11 @@
 				"aiProjectDesigner.pi.timeout": {
 					"type": "number",
 					"default": 120000
+				},
+				"aiProjectDesigner.pi.contextWindow": {
+					"type": "number",
+					"default": 0,
+					"markdownDescription": "Effective context window in tokens of the executor model, used by the sidebar usage bar. 0 uses the size Pi reports, which is the model maximum, not the length your local runtime actually loads (e.g. LM Studio can serve 131072 of a 262144 model)."
 				},
 				"aiProjectDesigner.pi.agentDir": {
 					"type": "string",

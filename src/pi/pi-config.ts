@@ -24,6 +24,8 @@ export interface ExtensionConfig {
   maxRetries: number;
   fontSize: number;
   autoExecute: boolean;
+  /** Effective executor context window in tokens; 0 = use what Pi reports. */
+  contextWindow: number;
 }
 
 function settings(): vscode.WorkspaceConfiguration {
@@ -74,6 +76,7 @@ export function readConfig(): ExtensionConfig {
     maxRetries: settings().get<number>('maxRetries', 2),
     fontSize: settings().get<number>('ui.fontSize', 0),
     autoExecute: settings().get<boolean>('autoExecute', false),
+    contextWindow: settings().get<number>('pi.contextWindow', 0),
   };
 }
 

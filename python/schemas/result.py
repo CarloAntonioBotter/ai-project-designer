@@ -47,6 +47,8 @@ class TaskExecutionResult:
     events: list[dict[str, Any]] = field(default_factory=list)
     started_at: str | None = None
     finished_at: str | None = None
+    # Token usage Pi reported for the run: the host shows the context fill from it.
+    usage: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         if self.status not in VALID_STATUSES:

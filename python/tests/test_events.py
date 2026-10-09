@@ -14,6 +14,16 @@ class EventParserTests(unittest.TestCase):
         self.assertEqual(parser.state.session_id, "abc")
         self.assertEqual(parser.state.stop_reason, "stop")
 
+    def test_message_end_reports_usage(self) -> None:
+        parser = EventParser()
+        events = parser.feed(
+            '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"done"}],'
+            '"stopReason":"stop","usage":{"input":1310,"output":40,"totalTokens":1350}}}'
+        )
+        self.assertEqual(events[0]["type"], "usage")
+        self.assertEqual(events[0]["usage"]["input"], 1310)
+        self.assertEqual(parser.state.usage["totalTokens"], 1350)
+
     def test_streams_text_deltas(self) -> None:
         parser = EventParser()
         events = parser.feed(

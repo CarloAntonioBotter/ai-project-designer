@@ -70,6 +70,7 @@ export interface RawRunnerResult {
   events?: Array<Record<string, unknown>>;
   started_at?: string;
   finished_at?: string;
+  usage?: Record<string, unknown>;
 }
 
 export interface NormalizedPiResult {
@@ -86,11 +87,26 @@ export interface NormalizedPiResult {
   warnings: string[];
   startedAt?: string;
   finishedAt?: string;
+  usage: Record<string, unknown>;
 }
 
 export type ProgressEvent =
   | { kind: 'progress'; type: string; [key: string]: unknown }
   | { kind: 'diagnostic'; message: string };
+
+/**
+ * Input tokens of the last Pi turn: that request holds the whole context, so its
+ * prompt size is what the context window is actually filled with. Falls back to
+ * the reported total when the provider omits `input`.
+ */
+export function usageTokens(usage: unknown): number | undefined {
+  if (!usage || typeof usage !== 'object') {
+    return undefined;
+  }
+  const record = usage as Record<string, unknown>;
+  const value = Number(record.input ?? record.totalTokens);
+  return Number.isFinite(value) && value > 0 ? Math.round(value) : undefined;
+}
 
 export interface PiModelInfo {
   provider: string;
@@ -175,5 +191,6 @@ export function normalizeRunnerResult(raw: RawRunnerResult): NormalizedPiResult 
     warnings: asStringArray(raw.warnings),
     startedAt: raw.started_at,
     finishedAt: raw.finished_at,
+    usage: raw.usage && typeof raw.usage === 'object' ? raw.usage : {},
   };
 }

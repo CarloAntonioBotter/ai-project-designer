@@ -62,6 +62,8 @@ export interface TaskResult {
   warnings: string[];
   startedAt?: string;
   finishedAt?: string;
+  /** Token usage Pi reported: the sidebar shows the context fill from it. */
+  usage?: Record<string, unknown>;
 }
 
 export interface Task {

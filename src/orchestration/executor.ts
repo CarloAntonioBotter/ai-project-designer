@@ -126,6 +126,7 @@ export async function executeTask(input: ExecuteTaskInput): Promise<TaskResult> 
     warnings: normalized.warnings,
     startedAt: normalized.startedAt,
     finishedAt: normalized.finishedAt,
+    usage: normalized.usage,
   };
 
   // Pi exits 0 even when the model gives up, so "exit 0 + assistant text" is not

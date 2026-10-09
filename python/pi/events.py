@@ -208,9 +208,16 @@ class EventParser:
             self.state.stop_reason = message.get("stopReason") or self.state.stop_reason
             self.state.provider = message.get("provider") or self.state.provider
             self.state.model = message.get("model") or self.state.model
-            self.state.usage = message.get("usage") or self.state.usage
+            usage = message.get("usage")
+            if isinstance(usage, dict) and usage:
+                self.state.usage = usage
             if self.state.stop_reason in ("error", "aborted"):
                 self.state.errors.append(f"pi stopped with reason: {self.state.stop_reason}")
+            # Tokens of the last turn = the context Pi is actually holding. Emitted
+            # per assistant message so the host can show the window fill live
+            # instead of only the initial prompt estimate.
+            if self.state.usage:
+                return self._record({"kind": "progress", "type": "usage", "usage": self.state.usage})
         return []
 
     # -- finalization ------------------------------------------------------
