@@ -18,6 +18,13 @@ from typing import Any, Iterable
 _PATH_KEYS = ("path", "filePath", "file", "filepath", "target")
 
 # Tools that introduce files as new artifacts rather than editing them.
+# Tools whose non-zero result is information, not a failed task: read-only tools
+# (a missing path may be exactly what the task must create) and shells (a non-zero
+# exit is a normal answer: grep with no match, a probe of an absent tool). The
+# command log keeps them; only a failed write/edit means the promised change
+# did not happen.
+_INFORMATIONAL_TOOLS = {"read", "grep", "find", "ls", "bash", "powershell"}
+
 _WRITE_TOOLS = {"write"}
 _EDIT_TOOLS = {"edit", "apply_patch", "multi_edit", "patch"}
 
@@ -148,8 +155,7 @@ class EventParser:
                 if is_error:
                     message = f"tool {tool_name} failed: {args}"
                     self.state.warnings.append(message)
-                    # Read failures can legitimately lead to creating the missing file.
-                    if tool_name not in ("read", "grep", "find", "ls"):
+                    if tool_name not in _INFORMATIONAL_TOOLS:
                         self.state.tool_failures[key] = message
                 else:
                     self.state.tool_failures.pop(key, None)

@@ -65,6 +65,17 @@ class NormalizeTests(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertTrue(result["errors"])
 
+    def test_zero_tool_calls_without_output_names_the_real_cause(self) -> None:
+        # Reasoning only, no tool call, no sentence: the turn was cut short, so
+        # blaming tool support would send the user to the wrong setting.
+        request = parse_request(make_request("/tmp/ws"))
+        parser = EventParser()
+        parser.feed('{"type":"message_end","message":{"role":"assistant","content":[],"stopReason":"stop"}}')
+        result = normalize(request, request.pi, parser, exit_code=0).to_dict()
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("no output", result["errors"][0])
+        self.assertIn("thinking", result["errors"][0])
+
     def test_zero_tool_calls_without_tools_is_completed(self) -> None:
         request = parse_request(make_request("/tmp/ws"))
         request.pi.no_tools = True

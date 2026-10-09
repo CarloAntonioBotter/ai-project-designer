@@ -41,7 +41,10 @@ class EventRegressionTests(unittest.TestCase):
     def test_commands_record_outcomes_and_recovered_retry(self):
         parser = EventParser()
         self.tool(parser, "bash", {"command": "npm test"}, True)
-        self.assertEqual(map_status(0, False, False, parser), "failed")
+        # A shell command that exits non-zero (grep with no match, a probe) is an
+        # answer the agent acts on, not a failed task: it stays a warning.
+        self.assertEqual(map_status(0, False, False, parser), "completed")
+        self.assertTrue(parser.state.warnings)
         self.tool(parser, "bash", {"command": "npm test"})
         self.assertEqual(map_status(0, False, False, parser), "completed")
         self.assertEqual([r["status"] for r in parser.test_reports()], ["failed", "passed"])
@@ -51,6 +54,18 @@ class EventRegressionTests(unittest.TestCase):
         self.tool(parser, "read", {"path": "missing"}, True)
         self.tool(parser, "write", {"path": "missing"})
         self.assertEqual(map_status(0, False, False, parser), "completed")
+
+    def test_recovered_shell_failures_still_complete_the_task(self):
+        # Real case: a run probed the Delphi RTL with grep, several of those
+        # commands exited 1 (no match), then it wrote, compiled and tested the
+        # unit. Only the write/edit contract may fail the task.
+        parser = EventParser()
+        for index in range(3):
+            self.tool(parser, "bash", {"command": f"grep -n needle file{index}.pas"}, True)
+        self.tool(parser, "write", {"path": "source/D13Calc.Zip.pas"})
+        self.tool(parser, "bash", {"command": "dcc32 D13Calc.Zip.pas"})
+        self.assertEqual(map_status(0, False, False, parser), "completed")
+        self.assertEqual(parser.state.tool_failures, {})
 
 
 class ProcessRegressionTests(unittest.TestCase):

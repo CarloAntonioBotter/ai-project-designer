@@ -73,11 +73,20 @@ def normalize(
         and not parser.state.tool_calls
     ):
         status = STATUS_FAILED
-        errors.append(
-            "pi produced no tool calls; the selected executor model "
-            f"({config.provider or 'default'}/{config.model or 'default'}) may not support tool use — "
-            "set aiProjectDesigner.pi.model to a tool-capable model"
-        )
+        if parser.final_text():
+            errors.append(
+                "pi produced no tool calls; the selected executor model "
+                f"({config.provider or 'default'}/{config.model or 'default'}) may not support tool use — "
+                "set aiProjectDesigner.pi.model to a tool-capable model"
+            )
+        else:
+            # Reasoning without a single action or sentence: the turn was cut
+            # before the model produced anything, not a tool-capability problem.
+            errors.append(
+                "pi produced no tool calls and no output: the run ended after reasoning only, "
+                "so the model never acted — lower aiProjectDesigner.pi.thinking or raise the model "
+                "output budget, then retry the task"
+            )
 
     summary = parser.final_text()
     if not summary:
