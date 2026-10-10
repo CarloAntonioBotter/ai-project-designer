@@ -163,7 +163,8 @@ class EventParser:
             elif is_error:
                 self.state.errors.append(f"tool {tool_name} failed without a matching start event")
             return self._record(
-                {"kind": "progress", "type": "tool_end", "tool": tool_name, "isError": is_error}
+                {"kind": "progress", "type": "tool_end", "tool": tool_name,
+                 "args": call["args"] if call is not None else None, "isError": is_error}
             )
 
         if event_type == "auto_retry_start":

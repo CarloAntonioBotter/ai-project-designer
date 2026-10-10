@@ -31,7 +31,7 @@ import {
   workspaceDefinedKeys,
 } from '../../pi/pi-config';
 import { PiRunner } from '../../pi/pi-runner';
-import { PiExecutionConfigPayload, ProgressEvent, parseTokenCount, usageTokens } from '../../pi/pi-protocol';
+import { PiExecutionConfigPayload, ProgressEvent, parseTokenCount, usageTokens, toolActivity } from '../../pi/pi-protocol';
 import { renderSidebarHtml } from './sidebar-html';
 
 const DEFAULT_CONSTRAINTS = [
@@ -863,7 +863,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       if (!this.textTimer) { this.textTimer = setTimeout(() => this.flushText(), 100); }
       return;
     }
-    if (type === 'thinking') {
+    if (type === 'thinking' || type === 'toolcall_start') {
       return;
     }
     if (type === 'usage') {
@@ -875,12 +875,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       return;
     }
     if (type === 'tool_start') {
-      this.postLog(taskId, `▸ tool: ${String((event as Record<string, unknown>).tool ?? 'tool')}`);
+      this.postLog(taskId, `▸ ${toolActivity(event)}`);
       return;
     }
     if (type === 'tool_end') {
       const isError = Boolean((event as Record<string, unknown>).isError);
-      this.postLog(taskId, `  ${isError ? '✗' : '✓'} tool finished${isError ? ' with error' : ''}`);
+      this.postLog(taskId, `${isError ? '✗' : '✓'} ${toolActivity(event)} — ${isError ? 'non riuscito' : 'terminato'}`);
       return;
     }
     if (type === 'session') {

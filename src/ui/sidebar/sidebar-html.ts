@@ -78,9 +78,16 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
   ::-webkit-scrollbar-corner { background: transparent; }
   .row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
   .meta { opacity: 0.8; }
-  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35)); margin-bottom: 10px; }
-  .tab { background: transparent; color: var(--vscode-foreground); border-radius: 0; border-bottom: 2px solid transparent; padding: 6px 10px; }
-  .tab.active { border-bottom-color: var(--vscode-focusBorder); font-weight: 600; }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .tab {
+    background: transparent; color: var(--vscode-foreground);
+    border: 1px solid var(--vscode-button-border, var(--vscode-panel-border, rgba(128,128,128,0.6)));
+    box-shadow: none;
+  }
+  .tab:hover { background: var(--vscode-list-hoverBackground); }
+  .tab.active { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+  .tab.active:hover { background: var(--vscode-button-hoverBackground, var(--vscode-button-background)); }
+  .tab:focus-visible { outline: 2px solid var(--vscode-focusBorder); outline-offset: 2px; }
   .field { margin-bottom: 14px; }
   .field label { display: block; margin-bottom: 6px; opacity: 0.9; }
   .field .help { opacity: 0.65; margin-top: 2px; }
@@ -106,16 +113,6 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
   .s-failed { color: var(--vscode-charts-red, #f48771); }
   .s-blocked, .s-skipped { color: var(--vscode-descriptionForeground); }
   .detail { margin-top: 8px; padding: 8px; border-radius: var(--radius); border-left: 3px solid var(--vscode-focusBorder); background: var(--vscode-textBlockQuote-background); }
-  /* Collapsible blocks are native <details>: no toggle JS. The summary reuses the
-     section-header style so both blocks read as siblings of the h2 sections. */
-  details.collapse > summary {
-    list-style: none; cursor: pointer; margin: 6px 0 0;
-    text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.75; font-weight: 600;
-  }
-  details.collapse > summary:hover { opacity: 1; }
-  details.collapse > summary::-webkit-details-marker { display: none; }
-  details.collapse > summary::before { content: '\u25B8\u00a0'; }
-  details.collapse[open] > summary::before { content: '\u25BE\u00a0'; }
   .md > :first-child { margin-top: 0; }
   .md > :last-child { margin-bottom: 0; }
   .md pre { max-height: none; }
@@ -254,8 +251,11 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
           <select id="taskThinking"></select>
           <div class="help">Overrides the executor thinking for this task only.</div>
         </div>
-        <details id="promptEditor" class="collapse hidden">
-          <summary>Executor prompt (editable before the first run)</summary>
+        <div class="tabs" role="tablist" aria-label="Task detail">
+          <button id="tabPrompt" class="tab active" role="tab" aria-selected="true" aria-controls="promptEditor">Executor prompt (editable before the first run)</button>
+          <button id="tabExecution" class="tab" role="tab" aria-selected="false" aria-controls="logBox" tabindex="-1">Execution</button>
+        </div>
+        <div id="promptEditor" role="tabpanel" aria-labelledby="tabPrompt">
           <div class="field">
             <textarea id="taskPrompt" class="md" spellcheck="false"></textarea>
             <div class="help">Used by this task's first run.</div>
@@ -263,12 +263,11 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
           <div class="row">
             <button id="savePrompt">Save Prompt</button>
           </div>
-        </details>
-        <details id="logBox" class="collapse">
-          <summary>Execution</summary>
+        </div>
+        <div id="logBox" class="hidden" role="tabpanel" aria-labelledby="tabExecution">
           <div id="taskSummary" class="md summary hidden"></div>
           <pre id="log" class="log"></pre>
-        </details>
+        </div>
       </div>
     </div>
   </div>
@@ -395,6 +394,7 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
   let lastSessionId;
   let liveStatus = '';
   let promptTaskId;
+  let detailTab = 'prompt';
   let planNoticeText = '';
   const logs = Object.create(null);
   const streaming = Object.create(null);
@@ -422,8 +422,6 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
   document.addEventListener('input', function (event) {
     if (event.target && event.target.tagName === 'TEXTAREA') { grow(event.target); }
   });
-  // <details> toggles its own visibility, which no other hook here observes.
-  document.addEventListener('toggle', growAll, true);
   // The sidebar can be resized, which rewraps the text and changes every height.
   window.addEventListener('resize', growAll);
   // One base size for the whole sidebar; 0 means "inherit the VS Code size".
@@ -451,7 +449,34 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
     el('settingsView').classList.toggle('hidden', tab !== 'settings');
     if (tab === 'settings' && !settingsDirty) { populateSettings(); }
     growAll();
+    if (tab === 'plan') { renderLog(state.detailTaskId); }
   }
+
+  function setDetailTab(tab) {
+    detailTab = tab;
+    const prompt = tab === 'prompt';
+    el('tabPrompt').classList.toggle('active', prompt);
+    el('tabExecution').classList.toggle('active', !prompt);
+    el('tabPrompt').setAttribute('aria-selected', String(prompt));
+    el('tabExecution').setAttribute('aria-selected', String(!prompt));
+    el('tabPrompt').tabIndex = prompt ? 0 : -1;
+    el('tabExecution').tabIndex = prompt ? -1 : 0;
+    el('promptEditor').classList.toggle('hidden', !prompt);
+    el('logBox').classList.toggle('hidden', prompt);
+    growAll();
+    renderLog(state.detailTaskId);
+  }
+
+  ['tabPrompt', 'tabExecution'].forEach(function (id) {
+    el(id).addEventListener('click', function () { setDetailTab(id === 'tabPrompt' ? 'prompt' : 'execution'); });
+    el(id).addEventListener('keydown', function (event) {
+      if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].indexOf(event.key) === -1) { return; }
+      event.preventDefault();
+      const tab = event.key === 'Home' ? 'prompt' : event.key === 'End' ? 'execution' : detailTab === 'prompt' ? 'execution' : 'prompt';
+      setDetailTab(tab);
+      el(tab === 'prompt' ? 'tabPrompt' : 'tabExecution').focus();
+    });
+  });
 
   el('tabPlan').addEventListener('click', function () { setTab('plan'); });
   el('tabSettings').addEventListener('click', function () { setTab('settings'); });
@@ -658,15 +683,13 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
       promptTaskId = task.id;
       el('taskPrompt').value = task.executorPrompt || '';
       fillThinking('taskThinking', task.thinking || '');
+      setDetailTab(task.executed || task.status === 'running' ? 'execution' : 'prompt');
     }
-    // Editing is allowed only before the task has ever run, and never during a run.
-    el('promptEditor').classList.toggle('hidden', Boolean(task.executed));
-    el('savePrompt').disabled = state.busy;
-    // Static <details>: setting the text keeps the element alive, so the user's collapse
-    // choice survives the next log line without any state to carry over.
+    // Keep the prompt readable after execution, but never editable after the first run.
+    el('taskPrompt').readOnly = state.busy || Boolean(task.executed);
+    el('savePrompt').disabled = state.busy || Boolean(task.executed);
     renderLog(taskId);
-    // The Execution result belongs to the Execution block, not to the top of the detail.
-    // Static element, like the log: it survives every re-render without losing the toggle state.
+    // The result stays inside the static Execution panel.
     const summary = task.summary ? renderMarkdown(task.summary) : '';
     el('taskSummary').innerHTML = summary;
     el('taskSummary').classList.toggle('hidden', !summary);
@@ -688,7 +711,9 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
   }
 
   function renderLog(taskId) {
-    el('log').textContent = (logs[taskId] || []).join('\\n');
+    const log = el('log');
+    log.textContent = (logs[taskId] || []).join('\\n');
+    log.scrollTop = log.scrollHeight;
   }
 
   // Real Pi usage once a run reported it (the last request carries the whole

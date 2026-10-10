@@ -143,6 +143,9 @@ test('executor verifies commands and persists immutable snapshots across retries
       maxRetries: 2, fontSize: 0, autoExecute: false, contextWindow: 0 } };
   const first = await executeTask(input);
   assert.equal(first.status, 'completed');
+  const savedRequest = JSON.parse(fs.readFileSync(path.join(store.sessionDir(session.id), 'tasks/task-A/request.json'), 'utf8'));
+  assert.match(savedRequest.instructions.join('\n'), /exact command/);
+  assert.match(savedRequest.instructions.join('\n'), /python -m unittest/);
   assert.equal(first.verification, 'checked');
   assert.equal(first.attempt, 1);
   assert.ok(first.artifacts[0].storagePath);

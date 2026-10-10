@@ -3,7 +3,27 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { missingDeclaredOutputs, toWorkspaceRelative } from '../src/orchestration/executor';
+import { missingDeclaredOutputs, toWorkspaceRelative, requiredCommandPassed } from '../src/orchestration/executor';
+
+test('required commands accept successful final commands after environment setup', () => {
+  const command = 'powershell -Command "msbuild packages/Design.dproj /t:Build"';
+  const report = (text: string, status: 'passed' | 'failed') => ({ command: text, status, detected: false });
+  assert.equal(requiredCommandPassed(command, [report(command, 'passed')]), true);
+  assert.equal(requiredCommandPassed(command, [report('export BDS=/studio\r\n' + command, 'passed')]), true);
+  assert.equal(requiredCommandPassed(command, [report('export BDS=/studio\n' + command, 'failed')]), false);
+  assert.equal(requiredCommandPassed(command, [report(command + '\necho done', 'passed')]), false);
+  assert.equal(requiredCommandPassed(command, [report('echo ' + command, 'passed')]), false);
+  assert.equal(requiredCommandPassed(command, [report('cat <<EOF\n' + command, 'passed')]), false);
+  assert.equal(requiredCommandPassed(command, [report(command, 'passed'), report(command, 'failed')]), false);
+  const logged = command + ' 2>&1 | tee -a demo/README.md\n'
+    + 'status=${PIPESTATUS[0]}; printf \'exit code: %s\' "$status" >> demo/README.md; exit "$status"';
+  assert.equal(requiredCommandPassed(command, [report(logged, 'passed')]), true);
+  assert.equal(requiredCommandPassed(command, [report(logged, 'failed')]), false);
+  assert.equal(requiredCommandPassed(command, [report(command + ' 2>&1 | tee log', 'passed')]), false);
+  assert.equal(requiredCommandPassed(command, [report(logged.replace('PIPESTATUS[0]', 'PIPESTATUS[1]'), 'passed')]), false);
+  assert.equal(requiredCommandPassed(command, [report(logged.replace('tee -a demo/README.md', 'tee log || true'), 'passed')]), false);
+  assert.equal(requiredCommandPassed(command, []), false);
+});
 
 const root = path.resolve('/tmp/ws');
 

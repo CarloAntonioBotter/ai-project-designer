@@ -12,6 +12,9 @@ function webview() {
       handlers: {} as Record<string, Function>, style: { setProperty() {}, removeProperty() {} },
       classList: { add: (s: string) => classes.add(s), remove: (s: string) => classes.delete(s),
         contains: (s: string) => classes.has(s), toggle: (s: string, on: boolean) => on ? classes.add(s) : classes.delete(s) },
+      attributes: {} as Record<string, string>, scrollTop: 0, scrollHeight: 1000,
+      setAttribute(name: string, value: string) { this.attributes[name] = value; },
+      focus() {},
       addEventListener(type: string, fn: Function) { this.handlers[type] = fn; } };
     nodes.set(id, node); return node;
   };
@@ -41,12 +44,17 @@ test('runtime updates preserve the request draft; switching sessions resets it',
   assert.equal(request.value, 'other');
 });
 
-test('executed prompt is hidden; errors remain visible in failed sessions', () => {
+test('executed prompt is read-only; execution opens and errors remain visible', () => {
   const view = webview();
   view.send({ type: 'state', state: state({ detailTaskId: 'task-A', tasks: [
     { id: 'task-A', executed: true, status: 'failed', executorPrompt: 'prompt' },
   ] }) });
   assert.equal(view.element('promptEditor').classList.contains('hidden'), true);
+  assert.equal(view.element('logBox').classList.contains('hidden'), false);
+  view.element('tabPrompt').handlers.click();
+  assert.equal(view.element('promptEditor').classList.contains('hidden'), false);
+  assert.equal(view.element('taskPrompt').readOnly, true);
+  assert.equal(view.element('savePrompt').disabled, true);
   view.send({ type: 'notice', where: 'plan', message: 'Task failed' });
   view.send({ type: 'state', state: state({ session: { id: 'session-A', status: 'failed', request: 'saved' } }) });
   assert.equal(view.element('planNotice').textContent, 'Task failed');
@@ -68,6 +76,35 @@ test('streaming updates only bounded logs; new attempts do not inherit text', ()
   view.send({ type: 'taskLogReset', taskId: 'task-A' });
   view.send({ type: 'taskText', taskId: 'task-A', delta: 'new attempt' });
   assert.equal(view.element('log').textContent, 'assistant: new attempt');
+});
+
+test('detail tabs preserve drafts and selection while logs always follow the latest output', () => {
+  const view = webview();
+  const task = { id: 'task-A', executorPrompt: 'initial', status: 'pending' };
+  view.send({ type: 'state', state: state({ detailTaskId: task.id, tasks: [task] }) });
+  assert.equal(view.element('promptEditor').classList.contains('hidden'), false);
+  view.element('taskPrompt').value = 'draft';
+  view.element('tabExecution').handlers.click();
+  assert.equal(view.element('logBox').classList.contains('hidden'), false);
+  assert.equal(view.element('tabExecution').attributes['aria-selected'], 'true');
+  const log = view.element('log');
+  log.scrollTop = 0;
+  log.scrollHeight = 2000;
+  view.send({ type: 'taskLog', taskId: task.id, line: 'last line' });
+  assert.equal(log.scrollTop, 2000);
+  log.scrollTop = 0;
+  log.scrollHeight = 2500;
+  view.send({ type: 'taskText', taskId: task.id, delta: 'streamed text' });
+  assert.equal(log.scrollTop, 2500);
+  view.send({ type: 'state', state: state({ detailTaskId: task.id, tasks: [task] }) });
+  assert.equal(view.element('logBox').classList.contains('hidden'), false);
+  assert.equal(view.element('taskPrompt').value, 'draft');
+  view.element('tabPrompt').handlers.click();
+  log.scrollTop = 0;
+  view.element('tabExecution').handlers.click();
+  assert.equal(log.scrollTop, 2500);
+  view.element('tabExecution').handlers.keydown({ key: 'Home', preventDefault() {} });
+  assert.equal(view.element('promptEditor').classList.contains('hidden'), false);
 });
 
 // Load the controller against a minimal VS Code API; exercise its actual command methods.

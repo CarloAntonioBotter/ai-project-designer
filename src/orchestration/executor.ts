@@ -52,7 +52,16 @@ export async function executeTask(input: ExecuteTaskInput): Promise<TaskResult> 
     // The task may override the executor thinking level for its own run.
     pi: { ...config.pi, thinking: task.thinking || config.pi.thinking },
     prompt: task.executorPrompt,
-    instructions: task.executorInstructions,
+    instructions: [
+      ...task.executorInstructions,
+      ...(task.commands?.length ? [
+        'The host requires successful tool execution of each exact command below. '
+        + 'Do not omit or rewrite them. Prefer each exact command as the final line of a shell call, '
+        + 'without pipelines or commands afterward. Initialise the required toolchain environment first; '
+        + 'if a command cannot run, report the blocker rather than claiming completion.\n'
+        + task.commands.join('\n'),
+      ] : []),
+    ],
     context: {
       workspaceRoot: context.workspaceRoot || session.workspaceRoot,
       files: context.files,
@@ -143,8 +152,7 @@ export async function executeTask(input: ExecuteTaskInput): Promise<TaskResult> 
   }
 
   const commands = task.commands ?? [];
-  const uncheckedCommands = commands.filter((command) =>
-    result.tests.filter((report) => report.command === command).at(-1)?.status !== 'passed');
+  const uncheckedCommands = commands.filter((command) => !requiredCommandPassed(command, result.tests));
   if (result.status === 'completed' && uncheckedCommands.length) {
     result.status = 'failed';
     result.errors.push(`Required commands did not pass: ${uncheckedCommands.join(', ')}`);
@@ -161,6 +169,25 @@ export async function executeTask(input: ExecuteTaskInput): Promise<TaskResult> 
 
   artifactStore.writeResult(task.id, result);
   return result;
+}
+
+/** A successful shell reports the exit status of its final command, including after environment setup. */
+export function requiredCommandPassed(command: string, reports: TaskResult['tests']): boolean {
+  const matches = reports.filter((report) => {
+    if (typeof report.command !== 'string') { return false; }
+    const executed = report.command.trim();
+    if (executed === command.trim()) { return true; }
+    if (executed.includes('<<')) { return false; }
+    const lines = executed.split(/\r?\n/);
+    if (lines.at(-1)?.trim() === command.trim()) { return true; }
+    // shortcut: recognise only tee logging that explicitly returns the command's PIPESTATUS.
+    const pipeline = lines.findIndex((line) => line.trim().startsWith(command.trim() + ' 2>&1 | tee '));
+    if (pipeline < 0 || pipeline !== lines.length - 2) { return false; }
+    const logTarget = lines[pipeline].trim().slice((command.trim() + ' 2>&1 | tee ').length);
+    if (/[|;&<>$`]/.test(logTarget)) { return false; }
+    return /^status=\$\{PIPESTATUS\[0\]\}; printf '[^']*' "\$status" >> [^;&|]+; exit "\$status"$/.test(lines.at(-1)!.trim());
+  });
+  return matches.at(-1)?.status === 'passed';
 }
 
 /** Declared output files a completed run left missing. Empty = all present. */

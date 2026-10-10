@@ -39,37 +39,29 @@ test('sidebar exposes an editable executor prompt for the selected task', () => 
   assert.match(html, /white-space: pre-wrap/);
   assert.match(
     html,
-    /el\('promptEditor'\)\.classList\.toggle\('hidden', Boolean\(task\.executed\)\)/
+    /el\('taskPrompt'\)\.readOnly = state\.busy \|\| Boolean\(task\.executed\)/
   );
 });
 
-test('sidebar nests the executor prompt in the detail frame and collapses it', () => {
-  // Prompt sits inside #detail, next to the re-rendered body, so it never gets wiped.
-  assert.match(html, /<div id="detailBody"><\/div>\s*<div id="contextBox"[\s\S]*?<details id="promptEditor" class="collapse hidden">/);
-  // The prompt sits above the execution log, not the other way round.
-  assert.match(html, /<details id="promptEditor"[\s\S]*?<\/details>\s*<details id="logBox"/);
-  assert.match(html, /<summary>Executor prompt \(editable before the first run\)<\/summary>/);
+test('sidebar nests two accessible tab panels in the detail frame', () => {
+  assert.match(html, /<div id="detailBody"><\/div>[\s\S]*?role="tablist" aria-label="Task detail"/);
+  assert.match(html, /id="tabPrompt"[^>]*role="tab"[^>]*aria-controls="promptEditor">Executor prompt \(editable before the first run\)/);
+  assert.match(html, /id="tabExecution"[^>]*role="tab"[^>]*aria-controls="logBox"[^>]*>Execution/);
+  assert.match(html, /id="promptEditor" role="tabpanel" aria-labelledby="tabPrompt"/);
   assert.match(html, /el\('detailBody'\)\.innerHTML =/);
   assert.doesNotMatch(html, /el\('detail'\)\.innerHTML =/);
 });
 
-test('sidebar collapses the execution log and keeps the toggle across log lines', () => {
-  // Static <details> under the prompt: the log text is written in place, so the element
-  // (and its open/closed state) is never rebuilt by a log line.
-  // Collapsed by default: the log is revealed by clicking the toggle.
-  // The task summary (Execution result) is rendered inside the Execution block,
-  // never at the top of the detail body.
-  assert.match(html, /<details id="logBox" class="collapse">\s*<summary>Execution<\/summary>\s*<div id="taskSummary" class="md summary hidden"><\/div>\s*<pre id="log" class="log"><\/pre>/);
-  assert.doesNotMatch(html, /<details id="logBox" class="collapse" open>/);
+test('sidebar keeps the execution result and log inside its tab panel', () => {
+  assert.match(html, /<div id="logBox" class="hidden" role="tabpanel" aria-labelledby="tabExecution">\s*<div id="taskSummary" class="md summary hidden"><\/div>\s*<pre id="log" class="log"><\/pre>/);
+  assert.doesNotMatch(html, /<details/);
   assert.match(html, /renderLog\(taskId\)/);
   assert.match(html, /el\('taskSummary'\)\.innerHTML = summary;/);
   // detailBody builds only metadata/errors/retry: the summary must not be in it.
   assert.match(html, /'<button class="secondary" data-retry="' \+ esc\(task\.id\)/);
   assert.doesNotMatch(html, /detailBody'\)\.innerHTML =[\s\S]{0,600}renderMarkdown\(task\.summary\)/);
   assert.doesNotMatch(html, /logOpen/);
-  // Native details, so the toggle needs no click handler of its own.
-  assert.match(html, /details\.collapse > summary::before/);
-  assert.match(html, /details\.collapse\[open\] > summary::before/);
+  assert.match(html, /log\.scrollTop = log\.scrollHeight;/);
 });
 
 test('sidebar joins the log with an escaped newline', () => {

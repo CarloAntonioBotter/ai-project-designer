@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeRunnerResult, parseProgressLine, parseTokenCount, usageTokens } from '../src/pi/pi-protocol';
+import { normalizeRunnerResult, parseProgressLine, parseTokenCount, usageTokens, toolActivity } from '../src/pi/pi-protocol';
+
+test('toolActivity identifies files and commands without exposing written contents', () => {
+  assert.equal(toolActivity({ tool: 'read', args: { path: 'source/Engine.pas' } }), 'read: source/Engine.pas');
+  assert.equal(toolActivity({ tool: 'bash', args: { command: 'dcc32\n Engine.pas' } }), 'bash: dcc32 Engine.pas');
+  assert.equal(toolActivity({ tool: 'write', args: { path: 'a.txt', content: 'secret' } }), 'write: a.txt');
+  assert.equal(toolActivity({ tool: 'read' }), 'read');
+  assert.ok(toolActivity({ tool: 'bash', args: { command: 'x'.repeat(300) } }).endsWith('…'));
+});
 
 test('usageTokens reads the context Pi actually held', () => {
   assert.equal(usageTokens({ input: 1310, output: 40, totalTokens: 1350 }), 1310);

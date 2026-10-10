@@ -108,6 +108,16 @@ export function usageTokens(usage: unknown): number | undefined {
   return Number.isFinite(value) && value > 0 ? Math.round(value) : undefined;
 }
 
+/** Describe the operation, never dump file contents or replacement text into the log. */
+export function toolActivity(event: Record<string, unknown>): string {
+  const tool = String(event.tool ?? 'tool');
+  const args = event.args && typeof event.args === 'object'
+    ? event.args as Record<string, unknown> : {};
+  const target = String(args.command ?? args.path ?? args.filePath ?? args.pattern ?? '')
+    .replace(/\s+/g, ' ').trim();
+  return `${tool}${target ? ': ' + target.slice(0, 240) + (target.length > 240 ? '…' : '') : ''}`;
+}
+
 export interface PiModelInfo {
   provider: string;
   model: string;
