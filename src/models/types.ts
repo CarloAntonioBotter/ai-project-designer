@@ -73,6 +73,8 @@ export interface Task {
   order: number;
   dependencies: string[];
   status: TaskStatus;
+  /** User override; the original execution result remains unchanged. */
+  manualSuccess?: boolean;
   objective: string;
   /** Complete prompt sent to Pi for this specific execution. */
   executorPrompt: string;

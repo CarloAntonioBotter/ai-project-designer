@@ -104,7 +104,7 @@ test('sidebar can mark an executed task as to do after confirmation', () => {
   // Offered only for a task that already produced a result.
   assert.match(html, /task\.executed\s*\? '<button class="secondary" data-mark=/);
   assert.match(html, /vscode\.postMessage\(\{ type: 'markTaskPending', id: target\.dataset\.mark \}\)/);
-  assert.match(html, /\[data-delete\],\[data-task\],\[data-retry\],\[data-mark\],\[data-session\]/);
+  assert.match(html, /\[data-delete\],\[data-task\],\[data-retry\],\[data-mark\],\[data-force\],\[data-session\]/);
   assert.match(providerSource, /async markTaskPending\(taskId: string\): Promise<void> \{/);
   assert.match(providerSource, /showWarningMessage\(\s*`Mark task \$\{task\.id\} as to do\?/);
   assert.match(providerSource, /confirmed !== 'Mark as To Do'/);
@@ -112,6 +112,13 @@ test('sidebar can mark an executed task as to do after confirmation', () => {
   // The result is discarded and the task becomes runnable again.
   assert.match(providerSource, /private resetTask\(task: Task\): void \{/);
   assert.match(providerSource, /task\.status = 'pending';/);
+});
+
+test('sidebar routes the manual success action and displays its provenance', () => {
+  assert.match(html, /vscode\.postMessage\(\{ type: 'forceTaskSuccess', id: target\.dataset\.force \}\)/);
+  assert.match(html, /Successo forzato manualmente/);
+  assert.match(html, /successo manuale/);
+  assert.match(providerSource, /case 'forceTaskSuccess':/);
 });
 
 test('sidebar lets the detail set a per-task thinking level', () => {

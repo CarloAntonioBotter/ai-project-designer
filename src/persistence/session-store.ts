@@ -42,6 +42,7 @@ function validateSession(value: any, id: string): asserts value is Session {
     const r = task.result;
     if (!['pending', 'running', 'completed', 'failed', 'blocked', 'skipped'].includes(task.status) ||
         !Number.isSafeInteger(task.retryCount) || task.retryCount < 0 ||
+        (task.manualSuccess !== undefined && typeof task.manualSuccess !== 'boolean') ||
         !strings(task.dependencies) || !strings(task.filesToRead) || !strings(task.filesToModify) ||
         !strings(task.executorInstructions) || !strings(task.acceptanceCriteria) ||
         !refs(task.inputArtifacts) || !refs(task.outputArtifacts) || !c ||

@@ -173,6 +173,10 @@ own configuration. The extension adds only the isolation flags it needs.
 5. **Run All** (or **Run Current Task**), with **Stop** available at any time.
 6. Failed tasks can be **Retried**; each retry is a brand new Pi run whose
    context includes the previous attempt's result as an explicit artifact.
+7. A failed task also offers **Forza successo** after confirmation. This manual
+   override unblocks dependent tasks without running or validating failed checks.
+   Original errors and results are preserved, and the task is labelled as a manual
+   success. Retry or **Mark as To Do** clears the override.
 
 Commands (Command Palette):
 

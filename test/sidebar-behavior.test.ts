@@ -111,9 +111,10 @@ test('detail tabs preserve drafts and selection while logs always follow the lat
 const Module = require('node:module');
 const load = Module._load;
 let SidebarProvider: any;
+let confirmWarning: () => Promise<string | undefined> = async () => undefined;
 try {
   Module._load = function (id: string, ...args: unknown[]) {
-    if (id === 'vscode') { return { window: { showInformationMessage() {}, showWarningMessage() {} } }; }
+    if (id === 'vscode') { return { window: { showInformationMessage() {}, showWarningMessage() { return confirmWarning(); } } }; }
     return load.call(this, id, ...args);
   };
   SidebarProvider = require('../src/ui/sidebar/sidebar-provider').SidebarProvider;
@@ -131,6 +132,95 @@ function controller() {
   ] } };
   return provider;
 }
+
+test('force success is offered only for failed tasks and disabled during a run', () => {
+  const view = webview();
+  const task = { id: 'A', status: 'failed', executed: true };
+  view.send({ type: 'state', state: state({ detailTaskId: 'A', tasks: [task] }) });
+  assert.match(view.element('detailBody').innerHTML, /data-force="A">Forza successo/);
+  view.send({ type: 'state', state: state({ detailTaskId: 'A', tasks: [task], busy: true }) });
+  assert.match(view.element('detailBody').innerHTML, /data-force="A" disabled/);
+  for (const status of ['pending', 'running', 'completed', 'blocked', 'skipped']) {
+    view.send({ type: 'state', state: state({ detailTaskId: 'A', tasks: [{ ...task, status }] }) });
+    assert.doesNotMatch(view.element('detailBody').innerHTML, /data-force=/);
+  }
+  view.send({ type: 'state', state: state({ detailTaskId: 'A',
+    tasks: [{ ...task, status: 'completed', manualSuccess: true, errors: ['original failure'] }] }) });
+  assert.match(view.element('detailBody').innerHTML, /Successo forzato manualmente/);
+  assert.match(view.element('detailBody').innerHTML, /original failure/);
+  assert.match(view.element('tasks').innerHTML, /successo manuale/);
+});
+
+test('force success preserves evidence, persists the override and unblocks dependents', async (t) => {
+  t.after(() => { confirmWarning = async () => undefined; });
+  confirmWarning = async () => 'Forza successo';
+  const provider = controller();
+  const task = provider.session.plan.tasks[0];
+  task.status = 'failed';
+  task.result = { status: 'failed', verification: 'unverified', errors: ['build failed'],
+    tests: [{ status: 'failed' }], artifacts: [{ path: 'a.txt' }] };
+  const original = JSON.stringify(task.result);
+  let saved: any;
+  provider.sessionStore = () => ({ saveSession(session: any) { saved = structuredClone(session); } });
+  await provider.forceTaskSuccess('A');
+  assert.equal(task.status, 'completed');
+  assert.equal(task.manualSuccess, true);
+  assert.equal(JSON.stringify(task.result), original);
+  assert.deepEqual(task.outputArtifacts, task.result.artifacts);
+  assert.equal(provider.session.plan.tasks[1].status, 'pending');
+  assert.equal(saved.plan.tasks[0].manualSuccess, true);
+  assert.equal(saved.status, 'planned');
+  assert.equal(provider.taskToUi(task).manualSuccess, true);
+  provider.resetTask(task);
+  assert.equal(task.manualSuccess, undefined);
+  assert.equal(task.status, 'pending');
+});
+
+test('force success requires confirmation and refuses stale or busy state', async (t) => {
+  t.after(() => { confirmWarning = async () => undefined; });
+  const cancelled = controller();
+  cancelled.session.plan.tasks[0].status = 'failed';
+  await cancelled.forceTaskSuccess('A');
+  assert.equal(cancelled.session.plan.tasks[0].status, 'failed');
+  confirmWarning = async () => { assert.fail('must not ask for confirmation'); };
+  for (const status of ['pending', 'running', 'completed', 'blocked', 'skipped']) {
+    const provider = controller();
+    provider.session.plan.tasks[0].status = status;
+    await provider.forceTaskSuccess('A');
+    assert.equal(provider.session.plan.tasks[0].status, status);
+  }
+  const busy = controller();
+  busy.busy = true;
+  busy.session.plan.tasks[0].status = 'failed';
+  await busy.forceTaskSuccess('A');
+  await busy.forceTaskSuccess('missing');
+  for (const change of ['busy', 'session', 'status', 'plan']) {
+    const provider = controller();
+    const task = provider.session.plan.tasks[0];
+    task.status = 'failed';
+    confirmWarning = async () => {
+      if (change === 'busy') { provider.busy = true; }
+      if (change === 'session') { provider.session = controller().session; }
+      if (change === 'status') { task.status = 'pending'; }
+      if (change === 'plan') { provider.session.plan.tasks = []; }
+      return 'Forza successo';
+    };
+    await provider.forceTaskSuccess('A');
+    assert.equal(task.manualSuccess, undefined);
+  }
+});
+
+test('force success reconciles completed and still-failed sessions', async (t) => {
+  t.after(() => { confirmWarning = async () => undefined; });
+  confirmWarning = async () => 'Forza successo';
+  for (const status of ['completed', 'failed']) {
+    const provider = controller();
+    provider.session.plan.tasks[0].status = 'failed';
+    provider.session.plan.tasks[1].status = status;
+    await provider.forceTaskSuccess('A');
+    assert.equal(provider.session.status, status);
+  }
+});
 
 test('Run Current Task cannot replace a live controller or clear its busy state', async () => {
   const provider = controller();

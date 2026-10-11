@@ -84,6 +84,14 @@ test('malformed sessions stay on disk and are visible as unreadable', (t) => {
   session.plan = { project: parsed.value.project, tasks: planToTasks(parsed.value, root) };
   store.saveSession(session);
   assert.equal(store.loadSession(session.id)?.plan?.tasks[0].status, 'pending');
+  session.plan.tasks[0].status = 'completed';
+  session.plan.tasks[0].manualSuccess = true;
+  store.saveSession(session);
+  assert.equal(store.loadSession(session.id)?.plan?.tasks[0].manualSuccess, true);
+  const malformed = JSON.parse(fs.readFileSync(file, 'utf8'));
+  malformed.plan.tasks[0].manualSuccess = 'true';
+  fs.writeFileSync(file, JSON.stringify(malformed));
+  assert.throws(() => store.loadSession(session.id), /Invalid persisted task/);
   fs.writeFileSync(file, JSON.stringify({ ...session, workspaceRoot: path.dirname(root) }));
   assert.equal(store.loadSession(session.id)?.workspaceRoot, root);
 });

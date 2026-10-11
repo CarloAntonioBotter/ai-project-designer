@@ -646,7 +646,7 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
       return '<li class="task" role="button" tabindex="0" data-task="' + esc(task.id) + '">' +
         '<div class="title"><span class="s-' + esc(task.status) + '">' + icon + '</span>' +
         '<span class="id">' + esc(task.id) + '</span><span class="desc">' + esc(task.title) + '</span>' +
-        '<span class="badge s-' + esc(task.status) + '">' + esc(task.status) + '</span></div></li>';
+        '<span class="badge s-' + esc(task.status) + '">' + esc(task.manualSuccess ? 'successo manuale' : task.status) + '</span></div></li>';
     }).join('');
 
     const busyBox = el('busy');
@@ -697,6 +697,7 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
       '<p><strong>' + esc(task.id) + ' — ' + esc(task.title) + '</strong></p>' +
       '<p><em>' + esc(task.objective) + '</em></p>' +
       '<p class="meta">dependencies: ' + esc((task.dependencies || []).join(', ') || 'none') + ' · attempt: ' + esc(task.attempt) + '</p>' +
+      (task.manualSuccess ? '<p class="meta"><strong>Successo forzato manualmente.</strong> Le verifiche originali non sono state convalidate.</p>' : '') +
       (task.errors && task.errors.length ? '<p class="error">' + task.errors.map(esc).join('<br>') + '</p>' : '') +
       (task.executed ? '<p class="meta">Evidence: ' + esc(task.verification || 'unverified') + ' (acceptance criteria require review)</p>' : '') +
       (task.warnings && task.warnings.length ? '<p class="meta">' + task.warnings.map(esc).join('<br>') + '</p>' : '') +
@@ -706,7 +707,11 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
             (state.busy ? ' disabled' : '') + '>Mark as To Do</button>'
           : '') +
         '<button class="secondary" data-retry="' + esc(task.id) + '"' +
-        (state.busy ? ' disabled' : '') + '>Retry Task</button></div>';
+        (state.busy ? ' disabled' : '') + '>Retry Task</button>' +
+        (task.status === 'failed'
+          ? '<button class="secondary" data-force="' + esc(task.id) + '"' +
+            (state.busy ? ' disabled' : '') + '>Forza successo</button>'
+          : '') + '</div>';
     renderContext(task);
   }
 
@@ -753,7 +758,7 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
     }
   });
   document.body.addEventListener('click', function (event) {
-    const target = event.target.closest('[data-delete],[data-task],[data-retry],[data-mark],[data-session]');
+    const target = event.target.closest('[data-delete],[data-task],[data-retry],[data-mark],[data-force],[data-session]');
     if (!target) { return; }
     if (target.dataset.delete) {
       event.stopPropagation();
@@ -761,6 +766,7 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
       return;
     }
     if (target.dataset.retry) { vscode.postMessage({ type: 'retryTask', id: target.dataset.retry }); }
+    else if (target.dataset.force) { vscode.postMessage({ type: 'forceTaskSuccess', id: target.dataset.force }); }
     else if (target.dataset.mark) { vscode.postMessage({ type: 'markTaskPending', id: target.dataset.mark }); }
     else if (target.dataset.task) { state.detailTaskId = target.dataset.task; renderDetail(target.dataset.task); }
     else if (target.dataset.session) { vscode.postMessage({ type: 'openSession', id: target.dataset.session }); }
