@@ -15,6 +15,7 @@ scripts/**
 .vscode-test/**
 *.vsix
 .ai-project/**
+.pi/**
 pi_err.txt
 progetto.md
 resources/make_icon.py

@@ -217,7 +217,7 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
     </div>
 
     <h2>User Request</h2>
-    <textarea id="request" placeholder="Describe the project or change you want planned..."></textarea>
+    <textarea id="request" class="md scroll" placeholder="Describe the project or change you want planned..."></textarea>
     <div class="row">
       <button id="generate">Generate Plan</button>
     </div>

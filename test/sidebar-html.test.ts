@@ -245,9 +245,11 @@ test('executor thinking and timeout share one 50/50 row', () => {
   );
 });
 
-test('settings system prompt scrolls instead of auto-growing', () => {
+test('user request and planner system prompt share dimensions and scroll instead of auto-growing', () => {
   assert.match(html, /textarea\.scroll \{ max-height: 320px; overflow: auto; resize: none; \}/);
   assert.match(html, /id="planner\.systemPrompt" class="md scroll"/);
+  assert.match(html, /id="request" class="md scroll"/);
+  assert.match(html, /textarea\.md \{ min-height: 240px;/);
   assert.match(html, /area\.classList\.contains\('scroll'\)/);
 });
 
