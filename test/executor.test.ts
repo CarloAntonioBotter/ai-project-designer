@@ -25,6 +25,25 @@ test('required commands accept successful final commands after environment setup
   assert.equal(requiredCommandPassed(command, []), false);
 });
 
+test('required commands accept only PowerShell wrappers that preserve native exit codes', () => {
+  const command = 'powershell -File tools/verify_export.ps1 -Path .\\out\\sample.ods';
+  const wrapped = `powershell -NoProfile -Command '${command}; exit $LASTEXITCODE'`;
+  const report = (text: string, status: 'passed' | 'failed') => ({ command: text, status, detected: false });
+  assert.equal(requiredCommandPassed(command, [report(wrapped, 'passed')]), true);
+  assert.equal(requiredCommandPassed(command, [report('export BDS=/studio\n' + wrapped, 'passed')]), true);
+  assert.equal(requiredCommandPassed(command, [report(wrapped, 'failed')]), false);
+  assert.equal(requiredCommandPassed(command, [report(wrapped, 'passed'), report(wrapped, 'failed')]), false);
+  assert.equal(requiredCommandPassed(command, [report(wrapped.replace('exit $LASTEXITCODE', 'exit 0'), 'passed')]), false);
+  assert.equal(requiredCommandPassed(command, [report(wrapped.replace('; exit $LASTEXITCODE', ''), 'passed')]), false);
+  assert.equal(requiredCommandPassed(command, [report(wrapped.replace(command, 'echo ' + command), 'passed')]), false);
+  assert.equal(requiredCommandPassed(command, [report(wrapped + '\necho done', 'passed')]), false);
+  assert.equal(requiredCommandPassed(command, [report('cat <<EOF\n' + wrapped, 'passed')]), false);
+  const build = 'powershell -Command "msbuild tests/Tests.dproj /t:Build"';
+  assert.equal(requiredCommandPassed(build, [
+    report(`powershell -NoProfile -Command '${build}; exit $LASTEXITCODE'`, 'passed'),
+  ]), true);
+});
+
 const root = path.resolve('/tmp/ws');
 
 test('toWorkspaceRelative keeps relative paths', () => {

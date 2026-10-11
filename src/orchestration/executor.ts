@@ -57,7 +57,10 @@ export async function executeTask(input: ExecuteTaskInput): Promise<TaskResult> 
       ...(task.commands?.length ? [
         'The host requires successful tool execution of each exact command below. '
         + 'Do not omit or rewrite them. Prefer each exact command as the final line of a shell call, '
-        + 'without pipelines or commands afterward. Initialise the required toolchain environment first; '
+        + 'without pipelines or commands afterward. For Windows native commands from Bash, preserve '
+        + 'backslashes with this supported wrapper (provided the command has no single quotes): '
+        + "powershell -NoProfile -Command '<exact command>; exit $LASTEXITCODE'. "
+        + 'Initialise the required toolchain environment first; '
         + 'if a command cannot run, report the blocker rather than claiming completion.\n'
         + task.commands.join('\n'),
       ] : []),
@@ -180,6 +183,9 @@ export function requiredCommandPassed(command: string, reports: TaskResult['test
     if (executed.includes('<<')) { return false; }
     const lines = executed.split(/\r?\n/);
     if (lines.at(-1)?.trim() === command.trim()) { return true; }
+    // Single-quoted Bash payload preserves Windows paths; the explicit exit preserves failures.
+    if (!command.includes("'") && lines.at(-1)?.trim()
+      === `powershell -NoProfile -Command '${command.trim()}; exit $LASTEXITCODE'`) { return true; }
     // shortcut: recognise only tee logging that explicitly returns the command's PIPESTATUS.
     const pipeline = lines.findIndex((line) => line.trim().startsWith(command.trim() + ' 2>&1 | tee '));
     if (pipeline < 0 || pipeline !== lines.length - 2) { return false; }
