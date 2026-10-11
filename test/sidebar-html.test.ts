@@ -116,8 +116,8 @@ test('sidebar can mark an executed task as to do after confirmation', () => {
 
 test('sidebar routes the manual success action and displays its provenance', () => {
   assert.match(html, /vscode\.postMessage\(\{ type: 'forceTaskSuccess', id: target\.dataset\.force \}\)/);
-  assert.match(html, /Successo forzato manualmente/);
-  assert.match(html, /successo manuale/);
+  assert.match(html, /Success manually overridden/);
+  assert.match(html, /manual success/);
   assert.match(providerSource, /case 'forceTaskSuccess':/);
 });
 

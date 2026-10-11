@@ -137,7 +137,7 @@ test('force success is offered only for failed tasks and disabled during a run',
   const view = webview();
   const task = { id: 'A', status: 'failed', executed: true };
   view.send({ type: 'state', state: state({ detailTaskId: 'A', tasks: [task] }) });
-  assert.match(view.element('detailBody').innerHTML, /data-force="A">Forza successo/);
+  assert.match(view.element('detailBody').innerHTML, /data-force="A">Force Success/);
   view.send({ type: 'state', state: state({ detailTaskId: 'A', tasks: [task], busy: true }) });
   assert.match(view.element('detailBody').innerHTML, /data-force="A" disabled/);
   for (const status of ['pending', 'running', 'completed', 'blocked', 'skipped']) {
@@ -146,14 +146,14 @@ test('force success is offered only for failed tasks and disabled during a run',
   }
   view.send({ type: 'state', state: state({ detailTaskId: 'A',
     tasks: [{ ...task, status: 'completed', manualSuccess: true, errors: ['original failure'] }] }) });
-  assert.match(view.element('detailBody').innerHTML, /Successo forzato manualmente/);
+  assert.match(view.element('detailBody').innerHTML, /Success manually overridden/);
   assert.match(view.element('detailBody').innerHTML, /original failure/);
-  assert.match(view.element('tasks').innerHTML, /successo manuale/);
+  assert.match(view.element('tasks').innerHTML, /manual success/);
 });
 
 test('force success preserves evidence, persists the override and unblocks dependents', async (t) => {
   t.after(() => { confirmWarning = async () => undefined; });
-  confirmWarning = async () => 'Forza successo';
+  confirmWarning = async () => 'Force Success';
   const provider = controller();
   const task = provider.session.plan.tasks[0];
   task.status = 'failed';
@@ -203,7 +203,7 @@ test('force success requires confirmation and refuses stale or busy state', asyn
       if (change === 'session') { provider.session = controller().session; }
       if (change === 'status') { task.status = 'pending'; }
       if (change === 'plan') { provider.session.plan.tasks = []; }
-      return 'Forza successo';
+      return 'Force Success';
     };
     await provider.forceTaskSuccess('A');
     assert.equal(task.manualSuccess, undefined);
@@ -212,7 +212,7 @@ test('force success requires confirmation and refuses stale or busy state', asyn
 
 test('force success reconciles completed and still-failed sessions', async (t) => {
   t.after(() => { confirmWarning = async () => undefined; });
-  confirmWarning = async () => 'Forza successo';
+  confirmWarning = async () => 'Force Success';
   for (const status of ['completed', 'failed']) {
     const provider = controller();
     provider.session.plan.tasks[0].status = 'failed';

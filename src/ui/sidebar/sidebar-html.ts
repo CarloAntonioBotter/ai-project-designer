@@ -646,7 +646,7 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
       return '<li class="task" role="button" tabindex="0" data-task="' + esc(task.id) + '">' +
         '<div class="title"><span class="s-' + esc(task.status) + '">' + icon + '</span>' +
         '<span class="id">' + esc(task.id) + '</span><span class="desc">' + esc(task.title) + '</span>' +
-        '<span class="badge s-' + esc(task.status) + '">' + esc(task.manualSuccess ? 'successo manuale' : task.status) + '</span></div></li>';
+        '<span class="badge s-' + esc(task.status) + '">' + esc(task.manualSuccess ? 'manual success' : task.status) + '</span></div></li>';
     }).join('');
 
     const busyBox = el('busy');
@@ -697,7 +697,7 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
       '<p><strong>' + esc(task.id) + ' — ' + esc(task.title) + '</strong></p>' +
       '<p><em>' + esc(task.objective) + '</em></p>' +
       '<p class="meta">dependencies: ' + esc((task.dependencies || []).join(', ') || 'none') + ' · attempt: ' + esc(task.attempt) + '</p>' +
-      (task.manualSuccess ? '<p class="meta"><strong>Successo forzato manualmente.</strong> Le verifiche originali non sono state convalidate.</p>' : '') +
+      (task.manualSuccess ? '<p class="meta"><strong>Success manually overridden.</strong> The original checks have not been validated.</p>' : '') +
       (task.errors && task.errors.length ? '<p class="error">' + task.errors.map(esc).join('<br>') + '</p>' : '') +
       (task.executed ? '<p class="meta">Evidence: ' + esc(task.verification || 'unverified') + ' (acceptance criteria require review)</p>' : '') +
       (task.warnings && task.warnings.length ? '<p class="meta">' + task.warnings.map(esc).join('<br>') + '</p>' : '') +
@@ -710,7 +710,7 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
         (state.busy ? ' disabled' : '') + '>Retry Task</button>' +
         (task.status === 'failed'
           ? '<button class="secondary" data-force="' + esc(task.id) + '"' +
-            (state.busy ? ' disabled' : '') + '>Forza successo</button>'
+            (state.busy ? ' disabled' : '') + '>Force Success</button>'
           : '') + '</div>';
     renderContext(task);
   }

@@ -367,12 +367,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     const task = session?.plan?.tasks.find((candidate) => candidate.id === taskId);
     if (!session?.plan || !task || this.busy || task.status !== 'failed') { return; }
     const confirmed = await vscode.window.showWarningMessage(
-      `Forzare in successo il task ${task.id}? I task dipendenti verranno sbloccati. `
-      + 'Questa azione non esegue né convalida le verifiche fallite; gli errori originali saranno conservati.',
+      `Force task ${task.id} to succeed? Dependent tasks will be unblocked. `
+      + 'This action does not run or validate failed checks; the original errors will be preserved.',
       { modal: true },
-      'Forza successo'
+      'Force Success'
     );
-    if (confirmed !== 'Forza successo' || this.busy || this.session !== session
+    if (confirmed !== 'Force Success' || this.busy || this.session !== session
       || task.status !== 'failed' || !session.plan?.tasks.includes(task)) { return; }
     task.status = 'completed';
     task.manualSuccess = true;
