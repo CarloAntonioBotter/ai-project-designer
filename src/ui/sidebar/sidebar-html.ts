@@ -88,12 +88,12 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
   .tab.active { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
   .tab.active:hover { background: var(--vscode-button-hoverBackground, var(--vscode-button-background)); }
   .tab:focus-visible { outline: 2px solid var(--vscode-focusBorder); outline-offset: 2px; }
-  .field { margin-bottom: 14px; }
-  .field label { display: block; margin-bottom: 6px; opacity: 0.9; }
-  .field .help { opacity: 0.65; margin-top: 2px; }
-  .check { display: flex; align-items: center; gap: 6px; margin: 6px 0; }
+  .field { margin-bottom: 16px; }
+  .field label { display: block; margin-bottom: 5px; opacity: 0.9; }
+  .field .help { opacity: 0.65; margin-top: 4px; line-height: 1.4; }
+  .check { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
   .check input { width: auto; }
-  .grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 8px; }
+  .grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 12px; }
   /* Paired numeric fields read better at equal width than 1fr/2fr. */
   .grid2.even { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .tasks { list-style: none; padding: 0; margin: 0; }
@@ -188,11 +188,11 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
   .md-preview pre { margin: 6px 0; padding: 6px; border-radius: var(--radius); background: var(--vscode-textCodeBlock-background); }
   .md-preview code, .md code, .md pre { font-family: var(--vscode-editor-font-family, monospace); }
   .md-preview blockquote { margin: 4px 0; padding-left: 8px; border-left: 3px solid var(--vscode-focusBorder); opacity: 0.9; }
-  fieldset { border: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35)); border-radius: var(--radius); margin: 0 0 16px; padding: 4px 12px 12px; }
+  fieldset { border: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35)); border-radius: var(--radius); margin: 0 0 18px; padding: 8px 12px 14px; }
   /* Bottom padding must be the real gap: no child (or grid cell) margin adds to it. */
   fieldset > :last-child, fieldset > .grid2:last-child > .field, .detail > :last-child, .md-preview > :last-child { margin-bottom: 0; }
   fieldset.planner-llm { margin-top: 20px; }
-  .models-row { margin-bottom: 12px; align-items: center; }
+  .models-row { margin-bottom: 14px; align-items: center; }
   legend { padding: 0 6px; }
 </style>
 </head>

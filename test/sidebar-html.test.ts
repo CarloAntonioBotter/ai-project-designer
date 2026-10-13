@@ -240,7 +240,7 @@ test('settings put max repair attempts and font size on one row', () => {
   // Provider/Thinking stay narrow so Model/Timeout keep the room.
   assert.match(
     html,
-    /\.grid2 \{ display: grid; grid-template-columns: minmax\(0, 1fr\) minmax\(0, 2fr\); gap: 8px; \}/
+    /\.grid2 \{ display: grid; grid-template-columns: minmax\(0, 1fr\) minmax\(0, 2fr\); gap: 12px; \}/
   );
 });
 
