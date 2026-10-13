@@ -85,7 +85,6 @@ test('sidebar shows the context token bar scaled to the model window', () => {
   assert.match(html, /el\('contextBox'\)\.classList\.toggle\('hidden', usedTokens === 0\)/);
   assert.match(html, /el\('contextBar'\)\.classList\.toggle\('full', pct >= 90\)/);
   assert.match(html, /message\.type === 'taskUsage'/);
-  assert.match(html, /id="pi\.contextWindow"/);
 });
 
 test('sidebar offers a run-from-scratch control once a task has executed', () => {

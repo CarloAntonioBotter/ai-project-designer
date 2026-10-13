@@ -80,7 +80,6 @@ interface SettingsView {
     model?: string;
     thinking?: string;
     timeout: number;
-    contextWindow: number;
   };
   pythonPath: string;
   pythonResolved?: string;
@@ -578,7 +577,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         model: config.pi.model,
         thinking: config.pi.thinking,
         timeout: config.pi.timeoutMs,
-        contextWindow: config.contextWindow,
       },
       pythonPath: config.pythonPath,
       pythonResolved: this.resolvedPython(),
@@ -602,7 +600,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       'pi.model': String(pi.model ?? ''),
       'pi.thinking': String(pi.thinking ?? ''),
       'pi.timeout': Number(pi.timeout ?? 120000),
-      'pi.contextWindow': Number(pi.contextWindow ?? 0),
       maxRetries: Number(raw.maxRetries ?? 2),
       'ui.fontSize': Number(raw.fontSize ?? 0),
       autoExecute: Boolean(raw.autoExecute),
@@ -1050,13 +1047,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     await this.view?.webview.postMessage({ type: 'state', state });
   }
 
-  /** Context window (tokens) of the configured executor model. Pi reports the
-   *  model maximum, which is not the length loaded by a local runtime (LM Studio
-   *  can serve 131k out of a 262k model), so the setting wins when it is set. */
+  /** Context window (tokens) the LLM makes available for the configured executor
+   *  model, as reported by Pi. */
   private contextWindowTokens(): number | undefined {
-    if (this.config.contextWindow > 0) {
-      return this.config.contextWindow;
-    }
     const model = this.config.pi.model;
     if (!model) {
       return undefined;

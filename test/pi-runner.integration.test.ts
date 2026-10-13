@@ -140,7 +140,7 @@ test('executor verifies commands and persists immutable snapshots across retries
   const input = { session, task, context: task.context, artifactStore, runnerScript: RUNNER_SCRIPT,
     config: { pythonPath: PYTHON, pi: { ...session.pi, timeoutMs: 5000, tools: ['write', 'bash'], trustProjectFiles: false },
       planner: { provider: 'fake', model: 'fake', thinking: '', timeoutMs: 5000, systemPrompt: '' },
-      maxRetries: 2, fontSize: 0, autoExecute: false, contextWindow: 0 } };
+      maxRetries: 2, fontSize: 0, autoExecute: false } };
   const first = await executeTask(input);
   assert.equal(first.status, 'completed');
   const savedRequest = JSON.parse(fs.readFileSync(path.join(store.sessionDir(session.id), 'tasks/task-A/request.json'), 'utf8'));

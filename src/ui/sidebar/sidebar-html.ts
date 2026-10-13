@@ -340,11 +340,6 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
           <input type="number" id="pi.timeout" min="1" />
         </div>
       </div>
-      <div class="field">
-        <label for="pi.contextWindow">Context window (tokens)</label>
-        <input type="number" id="pi.contextWindow" min="0" step="1024" />
-        <div class="help">0 = the size Pi reports, which is the model maximum. Set what your runtime actually loads: LM Studio can serve 131072 of a 262144 model.</div>
-      </div>
     </fieldset>
 
     <fieldset>
@@ -536,7 +531,6 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
     fillModels('pi.model', s.pi.provider || '', s.pi.model || '');
     fillThinking('pi.thinking', s.pi.thinking || '');
     el('pi.timeout').value = toSeconds(s.pi.timeout);
-    el('pi.contextWindow').value = s.pi.contextWindow || 0;
     const hint = el('pythonResolved');
     hint.textContent = s.pythonResolved
       ? 'in use: ' + s.pythonResolved
@@ -569,8 +563,7 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
         provider: val('pi.provider'),
         model: val('pi.model'),
         thinking: val('pi.thinking'),
-        timeout: toMs(num('pi.timeout')),
-        contextWindow: num('pi.contextWindow')
+        timeout: toMs(num('pi.timeout'))
       },
       maxRetries: num('maxRetries'),
       fontSize: num('ui.fontSize'),
