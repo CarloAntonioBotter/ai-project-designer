@@ -191,6 +191,13 @@ export function renderSidebarHtml(webview: vscode.Webview): string {
   fieldset { border: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35)); border-radius: var(--radius); margin: 0 0 18px; padding: 8px 12px 14px; }
   /* Bottom padding must be the real gap: no child (or grid cell) margin adds to it. */
   fieldset > :last-child, fieldset > .grid2:last-child > .field, .detail > :last-child, .md-preview > :last-child { margin-bottom: 0; }
+  /* Settings use one row gap instead of stacking field and checkbox margins. */
+  #settingsView fieldset { display: grid; gap: 16px; min-width: 0; padding: 8px 16px 16px; }
+  #settingsView fieldset > .field, #settingsView fieldset > .grid2,
+  #settingsView fieldset > .row, #settingsView fieldset > .md-preview,
+  #settingsView fieldset > .check, #settingsView .grid2 > .field { margin: 0; }
+  #settingsView .field > .check { display: flex; margin: 8px 0 0; }
+  #settingsView .check input { margin: 0; flex: none; }
   fieldset.planner-llm { margin-top: 20px; }
   .models-row { margin-bottom: 14px; align-items: center; }
   legend { padding: 0 6px; }

@@ -230,6 +230,13 @@ test('every runner action reports an unusable python interpreter', () => {
   assert.ok((providerSource.match(/this\.reportUnusablePython\(\)/g) || []).length >= 5);
 });
 
+test('settings use uniform row gaps without stacked field margins', () => {
+  assert.match(html, /#settingsView fieldset \{ display: grid; gap: 16px; min-width: 0; padding: 8px 16px 16px; \}/);
+  assert.match(html, /#settingsView fieldset > \.field, #settingsView fieldset > \.grid2,\s*#settingsView fieldset > \.row, #settingsView fieldset > \.md-preview,\s*#settingsView fieldset > \.check, #settingsView \.grid2 > \.field \{ margin: 0; \}/);
+  assert.match(html, /#settingsView \.field > \.check \{ display: flex; margin: 8px 0 0; \}/);
+  assert.match(html, /#settingsView \.check input \{ margin: 0; flex: none; \}/);
+});
+
 test('settings put max repair attempts and font size on one row', () => {
   assert.match(
     html,
